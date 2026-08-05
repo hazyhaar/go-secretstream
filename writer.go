@@ -1,5 +1,4 @@
-// Pure-Go secretstream writer (no CGO). WAL-G framing.
-// SoT: lateos-ai/wal-g internal/crypto/libsodium.
+// Modified in the lateos-ai/wal-g fork. Pure-Go secretstream writer (no CGO).
 
 package secretstream
 
@@ -9,28 +8,41 @@ import (
 	"sync"
 )
 
-// Writer encrypts plaintext into a secretstream.
+// Writer wraps ordinary writer with libsodium encryption.
 // Close is idempotent. Write after Close returns an error.
 type Writer struct {
 	io.Writer
-	state      *streamState
-	in         []byte
-	inIdx      int
+
+	state *streamState
+
+	in []byte
+
+	wireBuf []byte
+
+	inIdx int
+
+	// Header is written lazily on first Write/Close so Pipe consumers can
+	// attach the reader before any bytes are produced.
 	onceHeader sync.Once
-	key        []byte
-	headerErr  error
-	closed     bool
-	closeErr   error
+
+	key []byte
+
+	headerErr error
+
+	closed   bool
+	closeErr error
 }
 
-// NewWriter creates an encrypting WriteCloser. key is copied. Close emits TAG_FINAL.
+// NewWriter creates Writer from ordinary writer and key.
+// key is copied; the caller's slice is not retained.
 func NewWriter(writer io.Writer, key []byte) io.WriteCloser {
 	k := make([]byte, len(key))
 	copy(k, key)
 	return &Writer{
-		Writer: writer,
-		in:     make([]byte, ChunkSize),
-		key:    k,
+		Writer:  writer,
+		in:      make([]byte, ChunkSize),
+		wireBuf: make([]byte, ChunkSize+ABytes),
+		key:     k,
 	}
 }
 
@@ -53,7 +65,7 @@ func (writer *Writer) writeHeader() {
 	writer.state = st
 }
 
-// Write implements io.Writer.
+// Write implements io.Writer
 func (writer *Writer) Write(p []byte) (n int, err error) {
 	if writer.closed {
 		return 0, fmt.Errorf("secretstream writer: write after close")
@@ -63,6 +75,15 @@ func (writer *Writer) Write(p []byte) (n int, err error) {
 		return 0, writer.headerErr
 	}
 	for n != len(p) {
+		// Zero-copy fast path: when inIdx == 0 and remaining bytes >= ChunkSize,
+		// encrypt directly from p slice into wireBuf without copying to writer.in
+		if writer.inIdx == 0 && len(p)-n >= ChunkSize {
+			if err = writer.writeNextChunkFrom(p[n:n+ChunkSize], false); err != nil {
+				return
+			}
+			n += ChunkSize
+			continue
+		}
 		count := copy(writer.in[writer.inIdx:], p[n:])
 		writer.inIdx += count
 		n += count
@@ -75,27 +96,34 @@ func (writer *Writer) Write(p []byte) (n int, err error) {
 	return
 }
 
-func (writer *Writer) writeNextChunk(last bool) error {
+func (writer *Writer) writeNextChunkFrom(m []byte, last bool) (err error) {
 	tag := byte(TagMessage)
 	if last {
 		tag = TagFinal
 	}
-	wire, err := writer.state.push(writer.in[:writer.inIdx], tag)
+	wireLen, err := writer.state.pushTo(m, tag, writer.wireBuf)
 	if err != nil {
-		return fmt.Errorf("secretstream writer: push failed (plain_len=%d final=%v): %w", writer.inIdx, last, err)
+		return fmt.Errorf("secretstream writer: push failed (plain_len=%d final=%v): %w", len(m), last, err)
 	}
-	n, err := writer.Writer.Write(wire)
+	n, err := writer.Writer.Write(writer.wireBuf[:wireLen])
 	if err != nil {
-		return fmt.Errorf("secretstream writer: wire write failed (wire_len=%d final=%v): %w", len(wire), last, err)
+		return fmt.Errorf("secretstream writer: wire write failed (wire_len=%d final=%v): %w", wireLen, last, err)
 	}
-	if n != len(wire) {
-		return fmt.Errorf("secretstream writer: wire short write (%d/%d final=%v)", n, len(wire), last)
+	if n != wireLen {
+		return fmt.Errorf("secretstream writer: wire short write (%d/%d final=%v)", n, wireLen, last)
 	}
-	writer.inIdx = 0
 	return nil
 }
 
-// Close implements io.Closer. Idempotent. Scrubs stream state and key copy.
+func (writer *Writer) writeNextChunk(last bool) (err error) {
+	err = writer.writeNextChunkFrom(writer.in[:writer.inIdx], last)
+	if err == nil {
+		writer.inIdx = 0
+	}
+	return
+}
+
+// Close flushes final chunk and wipes state. Idempotent.
 func (writer *Writer) Close() error {
 	if writer.closed {
 		return writer.closeErr
@@ -104,19 +132,15 @@ func (writer *Writer) Close() error {
 	writer.onceHeader.Do(writer.writeHeader)
 	if writer.headerErr != nil {
 		writer.closeErr = writer.headerErr
-	} else {
-		writer.closeErr = writer.writeNextChunk(true)
+		return writer.closeErr
 	}
+	err := writer.writeNextChunk(true)
 	if writer.state != nil {
 		writer.state.wipe()
-		writer.state = nil
 	}
 	memzero(writer.key)
-	memzero(writer.in)
-	if closer, ok := writer.Writer.(io.Closer); ok {
-		if cerr := closer.Close(); writer.closeErr == nil {
-			writer.closeErr = cerr
-		}
+	if err != nil {
+		writer.closeErr = fmt.Errorf("secretstream writer: close write failed: %w", err)
 	}
 	return writer.closeErr
 }

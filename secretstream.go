@@ -39,8 +39,9 @@ const (
 )
 
 type streamState struct {
-	k     [32]byte
-	nonce [12]byte // counter_le32 || inonce_8
+	k      [32]byte
+	nonce  [12]byte // counter_le32 || inonce_8
+	cipher *chacha20.Cipher
 }
 
 func initPush(key []byte, header []byte) (*streamState, error) {
@@ -75,7 +76,19 @@ func initFromHeader(key, header []byte) (*streamState, error) {
 	copy(st.k[:], sub)
 	st.counterReset()
 	copy(st.nonce[counterBytes:], header[16:24])
+	if err := st.initCipher(); err != nil {
+		return nil, err
+	}
 	return st, nil
+}
+
+func (st *streamState) initCipher() error {
+	c, err := chacha20.NewUnauthenticatedCipher(st.k[:], st.nonce[:])
+	if err != nil {
+		return err
+	}
+	st.cipher = c
+	return nil
 }
 
 func (st *streamState) counterReset() {
@@ -86,14 +99,13 @@ func (st *streamState) counterReset() {
 }
 
 func (st *streamState) chacha(ic uint32) (*chacha20.Cipher, error) {
-	c, err := chacha20.NewUnauthenticatedCipher(st.k[:], st.nonce[:])
-	if err != nil {
-		return nil, err
+	if st.cipher == nil {
+		if err := st.initCipher(); err != nil {
+			return nil, err
+		}
 	}
-	if ic != 0 {
-		c.SetCounter(ic)
-	}
-	return c, nil
+	st.cipher.SetCounter(ic)
+	return st.cipher, nil
 }
 
 func (st *streamState) advance(mac []byte) error {
@@ -106,6 +118,9 @@ func (st *streamState) advance(mac []byte) error {
 		if st.nonce[i] != 0 {
 			break
 		}
+	}
+	if err := st.initCipher(); err != nil {
+		return err
 	}
 	// rekey if counter wrapped to zero OR caller checks tag
 	zero := true
@@ -135,6 +150,11 @@ func (st *streamState) rekey() error {
 	copy(st.k[:], out[:32])
 	copy(st.nonce[counterBytes:], out[32:32+inonceBytes])
 	st.counterReset()
+	if err := st.initCipher(); err != nil {
+		memzero(msg)
+		memzero(out)
+		return err
+	}
 	memzero(msg)
 	memzero(out)
 	return nil
@@ -164,52 +184,60 @@ func sodiumPadBlockMlen(mlen int) int {
 }
 
 func (st *streamState) push(m []byte, tag byte) ([]byte, error) {
-	// poly key from chacha block ic=0
-	c0, err := st.chacha(0)
+	wire := make([]byte, 1+len(m)+16)
+	n, err := st.pushTo(m, tag, wire)
 	if err != nil {
 		return nil, err
 	}
-	var block0 [64]byte
-	c0.XORKeyStream(block0[:], block0[:])
+	return wire[:n], nil
+}
+
+var staticZeros [64]byte
+
+func (st *streamState) pushTo(m []byte, tag byte, wire []byte) (int, error) {
+	wireLen := 1 + len(m) + 16
+	if len(wire) < wireLen {
+		return 0, fmt.Errorf("secretstream pushTo: wire buffer too small (%d < %d)", len(wire), wireLen)
+	}
+
+	// Single chacha cipher pass starting at counter 0
+	c, err := st.chacha(0)
+	if err != nil {
+		return 0, err
+	}
+	var polyBlock [64]byte
+	c.XORKeyStream(polyBlock[:], staticZeros[:64])
 	var polyKey [32]byte
-	copy(polyKey[:], block0[:32])
-	memzero(block0[:])
+	copy(polyKey[:], polyBlock[:32])
+	memzero(polyBlock[:])
 
 	mac := poly1305.New(&polyKey)
-	var zeros [16]byte
-	// AD empty: pad (0x10 - 0) & 0xf = 0
-	_, _ = mac.Write(zeros[:sodiumPad(0)])
+	if pad := sodiumPad(0); pad > 0 {
+		var zeros [16]byte
+		_, _ = mac.Write(zeros[:pad])
+	}
 
-	// block = tag||zeros, xor with chacha ic=1; auth full 64-byte block
+	// block = tag||zeros, xor with chacha (counter moves to 1); auth full 64-byte block
 	var block [64]byte
 	block[0] = tag
-	c1, err := st.chacha(1)
-	if err != nil {
-		memzero(polyKey[:])
-		return nil, err
-	}
-	c1.XORKeyStream(block[:], block[:])
+	c.XORKeyStream(block[:], block[:])
 	_, _ = mac.Write(block[:])
 	out0 := block[0]
 
-	// encrypt message with ic=2
-	ciph := make([]byte, len(m))
+	// encrypt message with chacha (counter moves to 2..) directly into wire[1:1+len(m)]
+	ciph := wire[1 : 1+len(m)]
 	if len(m) > 0 {
-		c2, err := st.chacha(2)
-		if err != nil {
-			memzero(polyKey[:])
-			memzero(block[:])
-			return nil, err
-		}
-		c2.XORKeyStream(ciph, m)
+		c.XORKeyStream(ciph, m)
+		_, _ = mac.Write(ciph)
 	}
-	_, _ = mac.Write(ciph)
-	_, _ = mac.Write(zeros[:sodiumPadBlockMlen(len(m))])
+	if pad := sodiumPadBlockMlen(len(m)); pad > 0 {
+		var zeros [16]byte
+		_, _ = mac.Write(zeros[:pad])
+	}
 
-	var slen [8]byte
-	binary.LittleEndian.PutUint64(slen[:], 0) // adlen
-	_, _ = mac.Write(slen[:])
-	binary.LittleEndian.PutUint64(slen[:], uint64(64+len(m)))
+	var slen [16]byte
+	binary.LittleEndian.PutUint64(slen[0:8], 0)
+	binary.LittleEndian.PutUint64(slen[8:16], uint64(64+len(m)))
 	_, _ = mac.Write(slen[:])
 
 	var tagOut [16]byte
@@ -217,20 +245,18 @@ func (st *streamState) push(m []byte, tag byte) ([]byte, error) {
 	memzero(polyKey[:])
 	memzero(block[:])
 
-	wire := make([]byte, 1+len(m)+16)
 	wire[0] = out0
-	copy(wire[1:1+len(m)], ciph)
 	copy(wire[1+len(m):], tagOut[:])
 
 	if err := st.advance(tagOut[:]); err != nil {
-		return nil, err
+		return 0, err
 	}
 	if tag&TagRekey != 0 {
 		if err := st.rekey(); err != nil {
-			return nil, err
+			return 0, err
 		}
 	}
-	return wire, nil
+	return wireLen, nil
 }
 
 func (st *streamState) pull(wire []byte) (m []byte, tag byte, err error) {
@@ -238,41 +264,59 @@ func (st *streamState) pull(wire []byte) (m []byte, tag byte, err error) {
 		return nil, 0, fmt.Errorf("secretstream pull: chunk too short (%d < ABytes=%d)", len(wire), ABytes)
 	}
 	mlen := len(wire) - ABytes
+	m = make([]byte, mlen)
+	n, tag, err := st.pullTo(wire, m)
+	if err != nil {
+		return nil, 0, err
+	}
+	return m[:n], tag, nil
+}
+
+func (st *streamState) pullTo(wire []byte, dst []byte) (n int, tag byte, err error) {
+	if len(wire) < ABytes {
+		return 0, 0, fmt.Errorf("secretstream pull: chunk too short (%d < ABytes=%d)", len(wire), ABytes)
+	}
+	mlen := len(wire) - ABytes
+	if len(dst) < mlen {
+		return 0, 0, fmt.Errorf("secretstream pullTo: dst buffer too small (%d < %d)", len(dst), mlen)
+	}
 	storedMAC := wire[1+mlen:]
 	ciph := wire[1 : 1+mlen]
 
-	c0, err := st.chacha(0)
+	// Single chacha cipher pass starting at counter 0
+	c, err := st.chacha(0)
 	if err != nil {
-		return nil, 0, fmt.Errorf("secretstream pull: chacha ic0: %w", err)
+		return 0, 0, fmt.Errorf("secretstream pull: chacha ic0: %w", err)
 	}
-	var block0 [64]byte
-	c0.XORKeyStream(block0[:], block0[:])
+	var polyBlock [64]byte
+	c.XORKeyStream(polyBlock[:], staticZeros[:64])
 	var polyKey [32]byte
-	copy(polyKey[:], block0[:32])
-	memzero(block0[:])
+	copy(polyKey[:], polyBlock[:32])
+	memzero(polyBlock[:])
 
 	mac := poly1305.New(&polyKey)
-	var zeros [16]byte
-	_, _ = mac.Write(zeros[:sodiumPad(0)])
+	if pad := sodiumPad(0); pad > 0 {
+		var zeros [16]byte
+		_, _ = mac.Write(zeros[:pad])
+	}
 
 	var block [64]byte
 	block[0] = wire[0]
-	c1, err := st.chacha(1)
-	if err != nil {
-		memzero(polyKey[:])
-		return nil, 0, fmt.Errorf("secretstream pull: chacha ic1: %w", err)
-	}
-	c1.XORKeyStream(block[:], block[:])
+	c.XORKeyStream(block[:], block[:])
 	tag = block[0]
 	block[0] = wire[0] // auth uses ciphertext byte, not decrypted tag — libsodium C order, do not change
 	_, _ = mac.Write(block[:])
-	_, _ = mac.Write(ciph)
-	_, _ = mac.Write(zeros[:sodiumPadBlockMlen(mlen)])
+	if mlen > 0 {
+		_, _ = mac.Write(ciph)
+	}
+	if pad := sodiumPadBlockMlen(mlen); pad > 0 {
+		var zeros [16]byte
+		_, _ = mac.Write(zeros[:pad])
+	}
 
-	var slen [8]byte
-	binary.LittleEndian.PutUint64(slen[:], 0)
-	_, _ = mac.Write(slen[:])
-	binary.LittleEndian.PutUint64(slen[:], uint64(64+mlen))
+	var slen [16]byte
+	binary.LittleEndian.PutUint64(slen[0:8], 0)
+	binary.LittleEndian.PutUint64(slen[8:16], uint64(64+mlen))
 	_, _ = mac.Write(slen[:])
 
 	var computed [16]byte
@@ -280,27 +324,30 @@ func (st *streamState) pull(wire []byte) (m []byte, tag byte, err error) {
 	memzero(polyKey[:])
 	memzero(block[:])
 	if subtle.ConstantTimeCompare(computed[:], storedMAC) != 1 {
-		return nil, 0, fmt.Errorf("secretstream pull: MAC mismatch (wire_len=%d plaintext_len=%d) — wrong key, truncated, or bitrot", len(wire), mlen)
+		return 0, 0, fmt.Errorf("secretstream pull: MAC mismatch (wire_len=%d plaintext_len=%d) — wrong key, truncated, or bitrot", len(wire), mlen)
 	}
 
-	m = make([]byte, mlen)
 	if mlen > 0 {
-		c2, err := st.chacha(2)
-		if err != nil {
-			return nil, 0, fmt.Errorf("secretstream pull: chacha ic2: %w", err)
-		}
-		c2.XORKeyStream(m, ciph)
+		c.XORKeyStream(dst[:mlen], ciph)
 	}
 
 	// Advance only after MAC success so a failed pull leaves state coherent
 	// for diagnostics; Reader always abandons on error.
 	if err := st.advance(storedMAC); err != nil {
-		return nil, 0, err
+		return 0, 0, err
 	}
 	if tag&TagRekey != 0 {
 		if err := st.rekey(); err != nil {
-			return nil, 0, err
+			return 0, 0, err
 		}
 	}
-	return m, tag, nil
+	return mlen, tag, nil
+}
+
+func TestInitPush(key []byte, header []byte) (*streamState, error) {
+	return initPush(key, header)
+}
+
+func (st *streamState) TestPushTo(m []byte, tag byte, wire []byte) (int, error) {
+	return st.pushTo(m, tag, wire)
 }
