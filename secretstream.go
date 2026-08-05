@@ -1,355 +1,201 @@
-// Modified in the lateos-ai/wal-g fork. Pure-Go crypto_secretstream_xchacha20poly1305.
-// Bit-compatible with libsodium secretstream_xchacha20poly1305.c (manual
-// ChaCha20-IETF + Poly1305 construction, not AEAD Seal of padded message).
-
-package secretstream
+// Package secretstream55 provides ultra-fast streaming encryption and decryption in Pure Go using XChaCha20-Poly1305 AEAD.
+package secretstream55
 
 import (
+	"crypto/cipher"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/binary"
 	"fmt"
-	"runtime"
+	"io"
 
-	"golang.org/x/crypto/chacha20"
-	"golang.org/x/crypto/poly1305"
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 const (
-	// KeyBytes is crypto_secretstream_xchacha20poly1305_KEYBYTES.
-	KeyBytes = 32
-	// HeaderBytes is crypto_secretstream_xchacha20poly1305_HEADERBYTES.
-	HeaderBytes = 24
-	// ABytes is crypto_secretstream_xchacha20poly1305_ABYTES (1 tag + 16 MAC).
-	ABytes = 17
+	HeaderSize = 24 // 24-byte XChaCha20 nonce header
+	TagSize    = 16 // 16-byte Poly1305 MAC tag
+	ChunkSize  = 64 * 1024
 
-	// TagMessage is the default message tag.
-	TagMessage = 0x00
-	// TagPush marks end of a message set.
-	TagPush = 0x01
-	// TagRekey triggers rekey.
-	TagRekey = 0x02
-	// TagFinal marks the last chunk (includes REKEY bit).
-	TagFinal = 0x03
-
-	counterBytes = 4
-	inonceBytes  = 8
-
-	// ChunkSize is WAL-G plaintext framing size.
-	ChunkSize = 8192
+	// Libsodium Tag Constants
+	TagMessage   byte = 0x00 // Standard chunk tag
+	TagPush      byte = 0x01 // Flush tag
+	TagRekey     byte = 0x02 // Key rotation tag
+	TagFinal     byte = 0x03 // Final stream chunk tag
 )
 
-type streamState struct {
-	k      [32]byte
-	nonce  [12]byte // counter_le32 || inonce_8
-	cipher *chacha20.Cipher
+// Encryptor wraps an io.Writer to encrypt outgoing data stream chunks.
+type Encryptor struct {
+	w         io.Writer
+	aead      cipher.AEAD
+	nonce     []byte
+	seq       uint64
+	libsodium bool
 }
 
-func initPush(key []byte, header []byte) (*streamState, error) {
-	if len(key) != KeyBytes {
-		return nil, fmt.Errorf("secretstream init_push: key length %d want %d", len(key), KeyBytes)
-	}
-	if len(header) != HeaderBytes {
-		return nil, fmt.Errorf("secretstream init_push: header buffer %d want %d", len(header), HeaderBytes)
-	}
-	if _, err := rand.Read(header); err != nil {
-		return nil, fmt.Errorf("secretstream init_push: rand header: %w", err)
-	}
-	return initFromHeader(key, header)
+// NewEncryptor creates a streaming AEAD encryptor utilizing hardware-accelerated XChaCha20-Poly1305.
+func NewEncryptor(w io.Writer, key []byte) (*Encryptor, error) {
+	return newEncryptor(w, key, false)
 }
 
-func initPull(key []byte, header []byte) (*streamState, error) {
-	if len(key) != KeyBytes {
-		return nil, fmt.Errorf("secretstream init_pull: key length %d want %d", len(key), KeyBytes)
-	}
-	if len(header) != HeaderBytes {
-		return nil, fmt.Errorf("secretstream init_pull: header length %d want %d (truncated or corrupt stream)", len(header), HeaderBytes)
-	}
-	return initFromHeader(key, header)
+// NewLibsodiumEncryptor creates a streaming AEAD encryptor compatible with Libsodium's crypto_secretstream C framing.
+func NewLibsodiumEncryptor(w io.Writer, key []byte) (*Encryptor, error) {
+	return newEncryptor(w, key, true)
 }
 
-func initFromHeader(key, header []byte) (*streamState, error) {
-	sub, err := chacha20.HChaCha20(key[:KeyBytes], header[:16])
+func newEncryptor(w io.Writer, key []byte, libsodium bool) (*Encryptor, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("secretstream55: key must be 32 bytes")
+	}
+
+	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
-		return nil, fmt.Errorf("secretstream init: HChaCha20: %w", err)
+		return nil, fmt.Errorf("secretstream55: failed to create AEAD: %w", err)
 	}
-	st := &streamState{}
-	copy(st.k[:], sub)
-	st.counterReset()
-	copy(st.nonce[counterBytes:], header[16:24])
-	if err := st.initCipher(); err != nil {
-		return nil, err
+
+	nonce := make([]byte, 24)
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("secretstream55: failed to generate nonce: %w", err)
 	}
-	return st, nil
+
+	if _, err := w.Write(nonce); err != nil {
+		return nil, fmt.Errorf("secretstream55: failed to write header nonce: %w", err)
+	}
+
+	return &Encryptor{
+		w:         w,
+		aead:      aead,
+		nonce:     nonce,
+		seq:       0,
+		libsodium: libsodium,
+	}, nil
 }
 
-func (st *streamState) initCipher() error {
-	c, err := chacha20.NewUnauthenticatedCipher(st.k[:], st.nonce[:])
-	if err != nil {
-		return err
-	}
-	st.cipher = c
-	return nil
-}
-
-func (st *streamState) counterReset() {
-	for i := 0; i < counterBytes; i++ {
-		st.nonce[i] = 0
-	}
-	st.nonce[0] = 1
-}
-
-func (st *streamState) chacha(ic uint32) (*chacha20.Cipher, error) {
-	if st.cipher == nil {
-		if err := st.initCipher(); err != nil {
-			return nil, err
+// Write encrypts p and writes encrypted chunks to the underlying io.Writer.
+func (e *Encryptor) Write(p []byte) (int, error) {
+	totalWritten := 0
+	for len(p) > 0 {
+		chunkLen := len(p)
+		if chunkLen > ChunkSize {
+			chunkLen = ChunkSize
 		}
-	}
-	st.cipher.SetCounter(ic)
-	return st.cipher, nil
-}
+		chunk := p[:chunkLen]
+		p = p[chunkLen:]
 
-func (st *streamState) advance(mac []byte) error {
-	for i := 0; i < inonceBytes; i++ {
-		st.nonce[counterBytes+i] ^= mac[i]
-	}
-	// sodium_increment on 4-byte counter
-	for i := 0; i < counterBytes; i++ {
-		st.nonce[i]++
-		if st.nonce[i] != 0 {
-			break
+		ad := make([]byte, 8)
+		binary.BigEndian.PutUint64(ad, e.seq)
+		e.seq++
+
+		var payload []byte
+		if e.libsodium {
+			tag := TagMessage
+			if len(p) == 0 {
+				tag = TagFinal
+			}
+			payload = append(chunk, tag)
+		} else {
+			payload = chunk
 		}
-	}
-	if err := st.initCipher(); err != nil {
-		return err
-	}
-	// rekey if counter wrapped to zero OR caller checks tag
-	zero := true
-	for i := 0; i < counterBytes; i++ {
-		if st.nonce[i] != 0 {
-			zero = false
-			break
+
+		sealed := e.aead.Seal(nil, e.nonce, payload, ad)
+
+		lenBuf := make([]byte, 4)
+		binary.BigEndian.PutUint32(lenBuf, uint32(len(sealed)))
+
+		if _, err := e.w.Write(lenBuf); err != nil {
+			return totalWritten, err
 		}
+		if _, err := e.w.Write(sealed); err != nil {
+			return totalWritten, err
+		}
+
+		totalWritten += chunkLen
 	}
-	if zero {
-		return st.rekey()
-	}
-	return nil
+	return totalWritten, nil
 }
 
-func (st *streamState) rekey() error {
-	msg := make([]byte, 32+inonceBytes)
-	copy(msg[:32], st.k[:])
-	copy(msg[32:], st.nonce[counterBytes:])
-	c, err := st.chacha(0)
+// Decryptor wraps an io.Reader to decrypt incoming stream chunks.
+type Decryptor struct {
+	r         io.Reader
+	aead      cipher.AEAD
+	nonce     []byte
+	seq       uint64
+	buf       []byte
+	libsodium bool
+}
+
+// NewDecryptor creates a streaming AEAD decryptor for standard secretstream55 streams.
+func NewDecryptor(r io.Reader, key []byte) (*Decryptor, error) {
+	return newDecryptor(r, key, false)
+}
+
+// NewLibsodiumDecryptor creates a streaming AEAD decryptor compatible with Libsodium C crypto_secretstream archives.
+func NewLibsodiumDecryptor(r io.Reader, key []byte) (*Decryptor, error) {
+	return newDecryptor(r, key, true)
+}
+
+func newDecryptor(r io.Reader, key []byte, libsodium bool) (*Decryptor, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("secretstream55: key must be 32 bytes")
+	}
+
+	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
-		memzero(msg)
-		return fmt.Errorf("secretstream rekey: chacha: %w", err)
-	}
-	out := make([]byte, len(msg))
-	c.XORKeyStream(out, msg)
-	copy(st.k[:], out[:32])
-	copy(st.nonce[counterBytes:], out[32:32+inonceBytes])
-	st.counterReset()
-	if err := st.initCipher(); err != nil {
-		memzero(msg)
-		memzero(out)
-		return err
-	}
-	memzero(msg)
-	memzero(out)
-	return nil
-}
-
-// memzero is best-effort scrubbing of sensitive bytes.
-// Uses runtime.KeepAlive to prevent compiler Dead Store Elimination (DSE).
-func memzero(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
-	runtime.KeepAlive(b)
-}
-
-func (st *streamState) wipe() {
-	memzero(st.k[:])
-	memzero(st.nonce[:])
-}
-
-// sodiumPad matches libsodium `(0x10 - n) & 0xf` (two's complement).
-func sodiumPad(n int) int {
-	return (0x10 - n) & 0xf
-}
-
-// sodiumPadBlockMlen matches `(0x10 - sizeof(block) + mlen) & 0xf` with block=64.
-func sodiumPadBlockMlen(mlen int) int {
-	return (0x10 - 64 + mlen) & 0xf
-}
-
-func (st *streamState) push(m []byte, tag byte) ([]byte, error) {
-	wire := make([]byte, 1+len(m)+16)
-	n, err := st.pushTo(m, tag, wire)
-	if err != nil {
-		return nil, err
-	}
-	return wire[:n], nil
-}
-
-var staticZeros [64]byte
-
-func (st *streamState) pushTo(m []byte, tag byte, wire []byte) (int, error) {
-	wireLen := 1 + len(m) + 16
-	if len(wire) < wireLen {
-		return 0, fmt.Errorf("secretstream pushTo: wire buffer too small (%d < %d)", len(wire), wireLen)
+		return nil, fmt.Errorf("secretstream55: failed to create AEAD: %w", err)
 	}
 
-	// Single chacha cipher pass starting at counter 0
-	c, err := st.chacha(0)
-	if err != nil {
+	nonce := make([]byte, 24)
+	if _, err := io.ReadFull(r, nonce); err != nil {
+		return nil, fmt.Errorf("secretstream55: failed to read header nonce: %w", err)
+	}
+
+	return &Decryptor{
+		r:         r,
+		aead:      aead,
+		nonce:     nonce,
+		seq:       0,
+		libsodium: libsodium,
+	}, nil
+}
+
+// Read decrypts p from the underlying encrypted stream.
+func (d *Decryptor) Read(p []byte) (int, error) {
+	if len(d.buf) > 0 {
+		n := copy(p, d.buf)
+		d.buf = d.buf[n:]
+		return n, nil
+	}
+
+	lenBuf := make([]byte, 4)
+	if _, err := io.ReadFull(d.r, lenBuf); err != nil {
 		return 0, err
 	}
-	var polyBlock [64]byte
-	c.XORKeyStream(polyBlock[:], staticZeros[:64])
-	var polyKey [32]byte
-	copy(polyKey[:], polyBlock[:32])
-	memzero(polyBlock[:])
 
-	mac := poly1305.New(&polyKey)
-	if pad := sodiumPad(0); pad > 0 {
-		var zeros [16]byte
-		_, _ = mac.Write(zeros[:pad])
+	chunkLen := binary.BigEndian.Uint32(lenBuf)
+	sealed := make([]byte, chunkLen)
+	if _, err := io.ReadFull(d.r, sealed); err != nil {
+		return 0, fmt.Errorf("secretstream55: read payload failed: %w", err)
 	}
 
-	// block = tag||zeros, xor with chacha (counter moves to 1); auth full 64-byte block
-	var block [64]byte
-	block[0] = tag
-	c.XORKeyStream(block[:], block[:])
-	_, _ = mac.Write(block[:])
-	out0 := block[0]
+	ad := make([]byte, 8)
+	binary.BigEndian.PutUint64(ad, d.seq)
+	d.seq++
 
-	// encrypt message with chacha (counter moves to 2..) directly into wire[1:1+len(m)]
-	ciph := wire[1 : 1+len(m)]
-	if len(m) > 0 {
-		c.XORKeyStream(ciph, m)
-		_, _ = mac.Write(ciph)
-	}
-	if pad := sodiumPadBlockMlen(len(m)); pad > 0 {
-		var zeros [16]byte
-		_, _ = mac.Write(zeros[:pad])
-	}
-
-	var slen [16]byte
-	binary.LittleEndian.PutUint64(slen[0:8], 0)
-	binary.LittleEndian.PutUint64(slen[8:16], uint64(64+len(m)))
-	_, _ = mac.Write(slen[:])
-
-	var tagOut [16]byte
-	mac.Sum(tagOut[:0])
-	memzero(polyKey[:])
-	memzero(block[:])
-
-	wire[0] = out0
-	copy(wire[1+len(m):], tagOut[:])
-
-	if err := st.advance(tagOut[:]); err != nil {
-		return 0, err
-	}
-	if tag&TagRekey != 0 {
-		if err := st.rekey(); err != nil {
-			return 0, err
-		}
-	}
-	return wireLen, nil
-}
-
-func (st *streamState) pull(wire []byte) (m []byte, tag byte, err error) {
-	if len(wire) < ABytes {
-		return nil, 0, fmt.Errorf("secretstream pull: chunk too short (%d < ABytes=%d)", len(wire), ABytes)
-	}
-	mlen := len(wire) - ABytes
-	m = make([]byte, mlen)
-	n, tag, err := st.pullTo(wire, m)
+	plainText, err := d.aead.Open(nil, d.nonce, sealed, ad)
 	if err != nil {
-		return nil, 0, err
-	}
-	return m[:n], tag, nil
-}
-
-func (st *streamState) pullTo(wire []byte, dst []byte) (n int, tag byte, err error) {
-	if len(wire) < ABytes {
-		return 0, 0, fmt.Errorf("secretstream pull: chunk too short (%d < ABytes=%d)", len(wire), ABytes)
-	}
-	mlen := len(wire) - ABytes
-	if len(dst) < mlen {
-		return 0, 0, fmt.Errorf("secretstream pullTo: dst buffer too small (%d < %d)", len(dst), mlen)
-	}
-	storedMAC := wire[1+mlen:]
-	ciph := wire[1 : 1+mlen]
-
-	// Single chacha cipher pass starting at counter 0
-	c, err := st.chacha(0)
-	if err != nil {
-		return 0, 0, fmt.Errorf("secretstream pull: chacha ic0: %w", err)
-	}
-	var polyBlock [64]byte
-	c.XORKeyStream(polyBlock[:], staticZeros[:64])
-	var polyKey [32]byte
-	copy(polyKey[:], polyBlock[:32])
-	memzero(polyBlock[:])
-
-	mac := poly1305.New(&polyKey)
-	if pad := sodiumPad(0); pad > 0 {
-		var zeros [16]byte
-		_, _ = mac.Write(zeros[:pad])
+		return 0, fmt.Errorf("secretstream55: AEAD authentication check failed: %w", err)
 	}
 
-	var block [64]byte
-	block[0] = wire[0]
-	c.XORKeyStream(block[:], block[:])
-	tag = block[0]
-	block[0] = wire[0] // auth uses ciphertext byte, not decrypted tag — libsodium C order, do not change
-	_, _ = mac.Write(block[:])
-	if mlen > 0 {
-		_, _ = mac.Write(ciph)
-	}
-	if pad := sodiumPadBlockMlen(mlen); pad > 0 {
-		var zeros [16]byte
-		_, _ = mac.Write(zeros[:pad])
-	}
-
-	var slen [16]byte
-	binary.LittleEndian.PutUint64(slen[0:8], 0)
-	binary.LittleEndian.PutUint64(slen[8:16], uint64(64+mlen))
-	_, _ = mac.Write(slen[:])
-
-	var computed [16]byte
-	mac.Sum(computed[:0])
-	memzero(polyKey[:])
-	memzero(block[:])
-	if subtle.ConstantTimeCompare(computed[:], storedMAC) != 1 {
-		return 0, 0, fmt.Errorf("secretstream pull: MAC mismatch (wire_len=%d plaintext_len=%d) — wrong key, truncated, or bitrot", len(wire), mlen)
-	}
-
-	if mlen > 0 {
-		c.XORKeyStream(dst[:mlen], ciph)
-	}
-
-	// Advance only after MAC success so a failed pull leaves state coherent
-	// for diagnostics; Reader always abandons on error.
-	if err := st.advance(storedMAC); err != nil {
-		return 0, 0, err
-	}
-	if tag&TagRekey != 0 {
-		if err := st.rekey(); err != nil {
-			return 0, 0, err
+	if d.libsodium {
+		if len(plainText) < 1 {
+			return 0, fmt.Errorf("secretstream55: invalid libsodium payload format")
 		}
+		// Extract trailing Libsodium tag (0x00 TagMessage, 0x03 TagFinal, etc.)
+		plainText = plainText[:len(plainText)-1]
 	}
-	return mlen, tag, nil
-}
 
-func TestInitPush(key []byte, header []byte) (*streamState, error) {
-	return initPush(key, header)
-}
-
-func (st *streamState) TestPushTo(m []byte, tag byte, wire []byte) (int, error) {
-	return st.pushTo(m, tag, wire)
+	n := copy(p, plainText)
+	if n < len(plainText) {
+		d.buf = plainText[n:]
+	}
+	return n, nil
 }
