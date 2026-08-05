@@ -9,6 +9,7 @@ import (
 	"crypto/subtle"
 	"encoding/binary"
 	"fmt"
+	"runtime"
 
 	"golang.org/x/crypto/chacha20"
 	"golang.org/x/crypto/poly1305"
@@ -160,12 +161,13 @@ func (st *streamState) rekey() error {
 	return nil
 }
 
-// memzero is best-effort scrubbing of sensitive bytes. Go's GC may retain
-// copies; there is no mlock. Matches libsodium sodium_memzero intent only.
+// memzero is best-effort scrubbing of sensitive bytes.
+// Uses runtime.KeepAlive to prevent compiler Dead Store Elimination (DSE).
 func memzero(b []byte) {
 	for i := range b {
 		b[i] = 0
 	}
+	runtime.KeepAlive(b)
 }
 
 func (st *streamState) wipe() {
