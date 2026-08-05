@@ -1,4 +1,5 @@
 // Pure-Go secretstream writer (no CGO). WAL-G framing: ChunkSize plaintext chunks.
+// SoT: lateos-ai/wal-g internal/crypto/libsodium.
 
 package secretstream
 
@@ -27,12 +28,14 @@ type Writer struct {
 }
 
 // NewWriter creates an encrypting WriteCloser. key must be KeyBytes long.
-// Close must be called to emit TAG_FINAL.
+// key is copied; the caller's slice is not retained. Close emits TAG_FINAL.
 func NewWriter(writer io.Writer, key []byte) io.WriteCloser {
+	k := make([]byte, len(key))
+	copy(k, key)
 	return &Writer{
 		Writer: writer,
 		in:     make([]byte, ChunkSize),
-		key:    key,
+		key:    k,
 	}
 }
 
@@ -97,7 +100,7 @@ func (writer *Writer) writeNextChunk(last bool) error {
 	return nil
 }
 
-// Close implements io.Closer. Idempotent.
+// Close implements io.Closer. Idempotent. Scrubs stream state and key copy.
 func (writer *Writer) Close() error {
 	if writer.closed {
 		return writer.closeErr
@@ -110,6 +113,13 @@ func (writer *Writer) Close() error {
 	} else {
 		writer.closeErr = writer.writeNextChunk(true)
 	}
+
+	if writer.state != nil {
+		writer.state.wipe()
+		writer.state = nil
+	}
+	memzero(writer.key)
+	memzero(writer.in)
 
 	if closer, ok := writer.Writer.(io.Closer); ok {
 		if cerr := closer.Close(); writer.closeErr == nil {

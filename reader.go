@@ -1,4 +1,5 @@
 // Pure-Go secretstream reader (no CGO). WAL-G framing: ChunkSize plaintext chunks.
+// SoT: lateos-ai/wal-g internal/crypto/libsodium.
 
 package secretstream
 
@@ -29,12 +30,15 @@ type Reader struct {
 }
 
 // NewReader creates a decrypting Reader. key must be KeyBytes long.
+// key is copied; the caller's slice is not retained.
 func NewReader(reader io.Reader, key []byte) io.Reader {
+	k := make([]byte, len(key))
+	copy(k, key)
 	return &Reader{
 		Reader: reader,
 		in:     make([]byte, ChunkSize+ABytes),
 		out:    make([]byte, ChunkSize),
-		key:    key,
+		key:    k,
 	}
 }
 
@@ -85,12 +89,16 @@ func (reader *Reader) readNextChunk() error {
 	if perr != nil {
 		return fmt.Errorf("secretstream reader: decrypt chunk (wire_len=%d): %w", n, perr)
 	}
-	// WAL-G: TAG_FINAL only on short/empty last wire chunk.
 	if tag == TagFinal && err != io.ErrUnexpectedEOF {
 		return fmt.Errorf("secretstream reader: TAG_FINAL on full wire chunk (%d bytes) — framing anomaly (premature end)", n)
 	}
 	if tag == TagFinal {
 		reader.done = true
+		if reader.state != nil {
+			reader.state.wipe()
+			reader.state = nil
+		}
+		memzero(reader.key)
 	}
 	if len(plain) > len(reader.out) {
 		reader.out = make([]byte, len(plain))

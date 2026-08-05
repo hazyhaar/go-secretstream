@@ -1,6 +1,6 @@
-// Pure-Go crypto_secretstream_xchacha20poly1305.
-// Bit-compatible with libsodium secretstream_xchacha20poly1305.c.
-// Source of truth developed in lateos-ai/wal-g internal/crypto/libsodium.
+// Modified in the lateos-ai/wal-g fork. Pure-Go crypto_secretstream_xchacha20poly1305.
+// Bit-compatible with libsodium secretstream_xchacha20poly1305.c (manual
+// ChaCha20-IETF + Poly1305 construction, not AEAD Seal of padded message).
 
 package secretstream
 
@@ -34,13 +34,12 @@ const (
 	counterBytes = 4
 	inonceBytes  = 8
 
-	// ChunkSize is the plaintext framing size used by WAL-G Reader/Writer.
 	ChunkSize = 8192
 )
 
 type streamState struct {
 	k     [32]byte
-	nonce [12]byte
+	nonce [12]byte // counter_le32 || inonce_8
 }
 
 func initPush(key []byte, header []byte) (*streamState, error) {
@@ -100,12 +99,14 @@ func (st *streamState) advance(mac []byte) error {
 	for i := 0; i < inonceBytes; i++ {
 		st.nonce[counterBytes+i] ^= mac[i]
 	}
+	// sodium_increment on 4-byte counter
 	for i := 0; i < counterBytes; i++ {
 		st.nonce[i]++
 		if st.nonce[i] != 0 {
 			break
 		}
 	}
+	// rekey if counter wrapped to zero OR caller checks tag
 	zero := true
 	for i := 0; i < counterBytes; i++ {
 		if st.nonce[i] != 0 {
@@ -125,6 +126,7 @@ func (st *streamState) rekey() error {
 	copy(msg[32:], st.nonce[counterBytes:])
 	c, err := st.chacha(0)
 	if err != nil {
+		memzero(msg)
 		return fmt.Errorf("secretstream rekey: chacha: %w", err)
 	}
 	out := make([]byte, len(msg))
@@ -132,18 +134,36 @@ func (st *streamState) rekey() error {
 	copy(st.k[:], out[:32])
 	copy(st.nonce[counterBytes:], out[32:32+inonceBytes])
 	st.counterReset()
+	memzero(msg)
+	memzero(out)
 	return nil
 }
 
+// memzero is best-effort scrubbing of sensitive bytes. Go's GC may retain
+// copies; there is no mlock. Matches libsodium sodium_memzero intent only.
+func memzero(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+func (st *streamState) wipe() {
+	memzero(st.k[:])
+	memzero(st.nonce[:])
+}
+
+// sodiumPad matches libsodium `(0x10 - n) & 0xf` (two's complement).
 func sodiumPad(n int) int {
 	return (0x10 - n) & 0xf
 }
 
+// sodiumPadBlockMlen matches `(0x10 - sizeof(block) + mlen) & 0xf` with block=64.
 func sodiumPadBlockMlen(mlen int) int {
 	return (0x10 - 64 + mlen) & 0xf
 }
 
 func (st *streamState) push(m []byte, tag byte) ([]byte, error) {
+	// poly key from chacha block ic=0
 	c0, err := st.chacha(0)
 	if err != nil {
 		return nil, err
@@ -152,25 +172,32 @@ func (st *streamState) push(m []byte, tag byte) ([]byte, error) {
 	c0.XORKeyStream(block0[:], block0[:])
 	var polyKey [32]byte
 	copy(polyKey[:], block0[:32])
+	memzero(block0[:])
 
 	mac := poly1305.New(&polyKey)
 	var zeros [16]byte
+	// AD empty: pad (0x10 - 0) & 0xf = 0
 	_, _ = mac.Write(zeros[:sodiumPad(0)])
 
+	// block = tag||zeros, xor with chacha ic=1; auth full 64-byte block
 	var block [64]byte
 	block[0] = tag
 	c1, err := st.chacha(1)
 	if err != nil {
+		memzero(polyKey[:])
 		return nil, err
 	}
 	c1.XORKeyStream(block[:], block[:])
 	_, _ = mac.Write(block[:])
 	out0 := block[0]
 
+	// encrypt message with ic=2
 	ciph := make([]byte, len(m))
 	if len(m) > 0 {
 		c2, err := st.chacha(2)
 		if err != nil {
+			memzero(polyKey[:])
+			memzero(block[:])
 			return nil, err
 		}
 		c2.XORKeyStream(ciph, m)
@@ -179,13 +206,15 @@ func (st *streamState) push(m []byte, tag byte) ([]byte, error) {
 	_, _ = mac.Write(zeros[:sodiumPadBlockMlen(len(m))])
 
 	var slen [8]byte
-	binary.LittleEndian.PutUint64(slen[:], 0)
+	binary.LittleEndian.PutUint64(slen[:], 0) // adlen
 	_, _ = mac.Write(slen[:])
 	binary.LittleEndian.PutUint64(slen[:], uint64(64+len(m)))
 	_, _ = mac.Write(slen[:])
 
 	var tagOut [16]byte
 	mac.Sum(tagOut[:0])
+	memzero(polyKey[:])
+	memzero(block[:])
 
 	wire := make([]byte, 1+len(m)+16)
 	wire[0] = out0
@@ -219,6 +248,7 @@ func (st *streamState) pull(wire []byte) (m []byte, tag byte, err error) {
 	c0.XORKeyStream(block0[:], block0[:])
 	var polyKey [32]byte
 	copy(polyKey[:], block0[:32])
+	memzero(block0[:])
 
 	mac := poly1305.New(&polyKey)
 	var zeros [16]byte
@@ -228,11 +258,12 @@ func (st *streamState) pull(wire []byte) (m []byte, tag byte, err error) {
 	block[0] = wire[0]
 	c1, err := st.chacha(1)
 	if err != nil {
+		memzero(polyKey[:])
 		return nil, 0, fmt.Errorf("secretstream pull: chacha ic1: %w", err)
 	}
 	c1.XORKeyStream(block[:], block[:])
 	tag = block[0]
-	block[0] = wire[0]
+	block[0] = wire[0] // auth uses ciphertext byte, not decrypted tag — libsodium C order, do not change
 	_, _ = mac.Write(block[:])
 	_, _ = mac.Write(ciph)
 	_, _ = mac.Write(zeros[:sodiumPadBlockMlen(mlen)])
@@ -245,6 +276,8 @@ func (st *streamState) pull(wire []byte) (m []byte, tag byte, err error) {
 
 	var computed [16]byte
 	mac.Sum(computed[:0])
+	memzero(polyKey[:])
+	memzero(block[:])
 	if subtle.ConstantTimeCompare(computed[:], storedMAC) != 1 {
 		return nil, 0, fmt.Errorf("secretstream pull: MAC mismatch (wire_len=%d plaintext_len=%d) — wrong key, truncated, or bitrot", len(wire), mlen)
 	}
@@ -258,6 +291,8 @@ func (st *streamState) pull(wire []byte) (m []byte, tag byte, err error) {
 		c2.XORKeyStream(m, ciph)
 	}
 
+	// Advance only after MAC success so a failed pull leaves state coherent
+	// for diagnostics; Reader always abandons on error.
 	if err := st.advance(storedMAC); err != nil {
 		return nil, 0, err
 	}
