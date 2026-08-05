@@ -9,7 +9,15 @@ import (
 )
 
 // Reader decrypts a secretstream produced by Writer (or libsodium C with the
-// same framing).
+// same framing: full chunks are ChunkSize plaintext + ABytes wire overhead;
+// the last chunk carries TAG_FINAL and may be shorter).
+//
+// Empty non-final chunks (MESSAGE/PUSH with zero plaintext) are skipped so
+// Read never returns (0, nil). After a MAC failure the stream is unusable;
+// callers must abandon the Reader (state is not advanced on MAC mismatch).
+//
+// Header bytes are not authenticated on their own (libsodium design): corruption
+// is detected at the first chunk MAC.
 type Reader struct {
 	io.Reader
 
@@ -23,6 +31,8 @@ type Reader struct {
 
 	outLen int
 
+	// Header is read lazily on the first Read so Pipe producers can write
+	// the header after the reader is attached.
 	onceHeader sync.Once
 
 	key []byte
@@ -56,23 +66,26 @@ func (reader *Reader) readHeader() {
 	reader.state = st
 }
 
-// Read implements io.Reader.
+// Read implements io.Reader. Never returns (0, nil).
 func (reader *Reader) Read(p []byte) (n int, err error) {
 	reader.onceHeader.Do(reader.readHeader)
 	if reader.headerErr != nil {
 		return 0, reader.headerErr
 	}
-	if reader.outIdx >= reader.outLen {
+	for {
+		if reader.outIdx < reader.outLen {
+			n = copy(p, reader.out[reader.outIdx:reader.outLen])
+			reader.outIdx += n
+			return n, nil
+		}
 		if reader.done {
 			return 0, io.EOF
 		}
 		if err = reader.readNextChunk(); err != nil {
-			return
+			return 0, err
 		}
+		// empty non-final plaintext: loop for next chunk
 	}
-	n = copy(p, reader.out[reader.outIdx:reader.outLen])
-	reader.outIdx += n
-	return
 }
 
 func (reader *Reader) readNextChunk() error {
@@ -87,12 +100,18 @@ func (reader *Reader) readNextChunk() error {
 	if perr != nil {
 		return fmt.Errorf("secretstream reader: decrypt chunk (wire_len=%d): %w", n, perr)
 	}
+	// WAL-G framing: TAG_FINAL only on a short (or empty) last wire chunk.
+	// A full-sized FINAL is rejected — foreign producers that finalize on an
+	// exact ChunkSize boundary need a trailing empty FINAL (libsodium-friendly)
+	// or must use a non-WAL-G framer.
 	if tag == TagFinal && err != io.ErrUnexpectedEOF {
 		return fmt.Errorf("secretstream reader: TAG_FINAL on full wire chunk (%d bytes) — framing anomaly (premature end)", n)
 	}
 	if tag == TagFinal {
 		reader.done = true
 	}
+	// plain fits ChunkSize by framing; grow only if a foreign full-chunk FINAL
+	// path is ever relaxed.
 	if len(plain) > len(reader.out) {
 		reader.out = make([]byte, len(plain))
 	}

@@ -54,12 +54,21 @@ dec, _ := c.Decrypt(src)
 
 | Field | Size |
 |-------|------|
-| Header | 24 B |
+| Header | 24 B (not authenticated alone — first chunk MAC detects corruption) |
 | Chunk | 1 tag byte + ciphertext + 16 B Poly1305 MAC (`ABytes = 17` overhead) |
 | Full plaintext chunk | 8192 B (`ChunkSize`) before last |
 | Last chunk | `TAG_FINAL` (0x03), any remaining length including 0 |
 
 Core `push`/`pull` match libsodium C bit-for-bit; `Reader`/`Writer` add WAL-G-style framing.
+
+**WAL-G framing rule:** `TAG_FINAL` on a full-sized wire chunk (`ChunkSize+ABytes`) is rejected (`premature end`). Finalize with a short/empty FINAL (what `Writer.Close` does). Foreign streams that end exactly on a full chunk need a trailing empty FINAL.
+
+## Security notes
+
+- No key/material zeroization after use (normal for Go; no `mlock`).
+- Prefer `KeyTransformHex` / `KeyTransformBase64` with full 32-byte keys. `KeyTransformNone` is **legacy WAL-G**: truncates >32 bytes silently and zero-pads short keys (25–31) — reduced entropy / prefix collisions.
+- After a MAC failure, abandon the `Reader` (state is not advanced on mismatch).
+- `Writer.Close` is idempotent; `Write` after `Close` errors.
 
 ## Test
 

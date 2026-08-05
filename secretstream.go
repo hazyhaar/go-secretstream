@@ -70,7 +70,7 @@ func initPull(key []byte, header []byte) (*streamState, error) {
 func initFromHeader(key, header []byte) (*streamState, error) {
 	sub, err := chacha20.HChaCha20(key[:KeyBytes], header[:16])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("secretstream init: HChaCha20: %w", err)
 	}
 	st := &streamState{}
 	copy(st.k[:], sub)
@@ -97,7 +97,7 @@ func (st *streamState) chacha(ic uint32) (*chacha20.Cipher, error) {
 	return c, nil
 }
 
-func (st *streamState) advance(mac []byte) {
+func (st *streamState) advance(mac []byte) error {
 	for i := 0; i < inonceBytes; i++ {
 		st.nonce[counterBytes+i] ^= mac[i]
 	}
@@ -115,23 +115,25 @@ func (st *streamState) advance(mac []byte) {
 		}
 	}
 	if zero {
-		st.rekey()
+		return st.rekey()
 	}
+	return nil
 }
 
-func (st *streamState) rekey() {
+func (st *streamState) rekey() error {
 	msg := make([]byte, 32+inonceBytes)
 	copy(msg[:32], st.k[:])
 	copy(msg[32:], st.nonce[counterBytes:])
 	c, err := st.chacha(0)
 	if err != nil {
-		return
+		return fmt.Errorf("secretstream rekey: chacha: %w", err)
 	}
 	out := make([]byte, len(msg))
 	c.XORKeyStream(out, msg)
 	copy(st.k[:], out[:32])
 	copy(st.nonce[counterBytes:], out[32:32+inonceBytes])
 	st.counterReset()
+	return nil
 }
 
 func sodiumPad(n int) int {
@@ -191,9 +193,13 @@ func (st *streamState) push(m []byte, tag byte) ([]byte, error) {
 	copy(wire[1:1+len(m)], ciph)
 	copy(wire[1+len(m):], tagOut[:])
 
-	st.advance(tagOut[:])
+	if err := st.advance(tagOut[:]); err != nil {
+		return nil, err
+	}
 	if tag&TagRekey != 0 {
-		st.rekey()
+		if err := st.rekey(); err != nil {
+			return nil, err
+		}
 	}
 	return wire, nil
 }
@@ -253,9 +259,15 @@ func (st *streamState) pull(wire []byte) (m []byte, tag byte, err error) {
 		c2.XORKeyStream(m, ciph)
 	}
 
-	st.advance(storedMAC)
+	// Advance only after MAC success so a failed pull leaves state reusable
+	// for diagnostics; Reader always abandons on error.
+	if err := st.advance(storedMAC); err != nil {
+		return nil, 0, err
+	}
 	if tag&TagRekey != 0 {
-		st.rekey()
+		if err := st.rekey(); err != nil {
+			return nil, 0, err
+		}
 	}
 	return m, tag, nil
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -105,7 +106,7 @@ func TestSecretstreamRoundTripSizes(t *testing.T) {
 	require.NoError(t, err)
 	sizes := []int{0, 1, 100, ChunkSize - 1, ChunkSize, ChunkSize + 1, ChunkSize*2 + 50, ChunkSize * 3}
 	for _, sz := range sizes {
-		t.Run(itoa(sz), func(t *testing.T) {
+		t.Run(strconv.Itoa(sz), func(t *testing.T) {
 			plain := make([]byte, sz)
 			_, _ = rand.Read(plain)
 			var buf bytes.Buffer
@@ -182,14 +183,21 @@ func lookupCrossOracle(t *testing.T) string {
 		return p
 	}
 	if _, err := exec.LookPath("python3"); err != nil {
+		if os.Getenv("SECRETSTREAM_REQUIRE_ORACLE") == "1" {
+			t.Fatal("SECRETSTREAM_REQUIRE_ORACLE=1 but no python3 / oracle")
+		}
+		t.Log("cross-oracle skipped: no python3 (set SECRETSTREAM_ORACLE or SECRETSTREAM_REQUIRE_ORACLE=1)")
 		return ""
 	}
 	if err := exec.Command("python3", "-c", "import nacl.bindings").Run(); err != nil {
-		// try dedicated venv from dogfood
 		venv := "/inference/venvs/walg-oracle/bin/python3"
 		if err := exec.Command(venv, "-c", "import nacl.bindings").Run(); err == nil {
 			return venv
 		}
+		if os.Getenv("SECRETSTREAM_REQUIRE_ORACLE") == "1" {
+			t.Fatal("SECRETSTREAM_REQUIRE_ORACLE=1 but PyNaCl missing")
+		}
+		t.Log("cross-oracle skipped: PyNaCl missing (pip install pynacl)")
 		return ""
 	}
 	return "python3"
@@ -223,17 +231,3 @@ while off < len(rest):
         break
 sys.stdout.buffer.write(out)
 `
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [16]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
-}

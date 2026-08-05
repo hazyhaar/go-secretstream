@@ -59,7 +59,7 @@ func KeyTransform(userInput string, transformType string, expectedLen int) ([]by
 func keyTransformBase64(userInput string) ([]byte, error) {
 	decoded, err := base64.StdEncoding.DecodeString(userInput)
 	if err != nil {
-		return nil, fmt.Errorf("while base64 decoding key: %v", err)
+		return nil, fmt.Errorf("while base64 decoding key: %w", err)
 	}
 	return decoded, nil
 }
@@ -67,12 +67,18 @@ func keyTransformBase64(userInput string) ([]byte, error) {
 func keyTransformHex(userInput string) ([]byte, error) {
 	decoded, err := hex.DecodeString(userInput)
 	if err != nil {
-		return nil, fmt.Errorf("while hex decoding key: %v", err)
+		return nil, fmt.Errorf("while hex decoding key: %w", err)
 	}
 	return decoded, nil
 }
 
 // keyTransformNone mimics older WAL-G: pad/truncate ASCII key material to KeyBytes.
+//
+// WARNING (legacy hazards — prefer KeyTransformHex or KeyTransformBase64):
+//   - inputs longer than KeyBytes are silently truncated to the first 32 bytes
+//     (two passphrases sharing a 32-byte prefix yield the same key);
+//   - inputs of length [minimalKeyLength, KeyBytes) are zero-padded on the right
+//     (reduced key space vs a full 32-byte random key).
 func keyTransformNone(userInput string) ([]byte, error) {
 	if len(userInput) < minimalKeyLength {
 		return nil, &ErrShortKey{keyLength: len(userInput)}

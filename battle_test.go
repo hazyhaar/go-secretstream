@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -90,8 +91,12 @@ func TestBattleCorruptHeader(t *testing.T) {
 	_, err := io.ReadAll(NewReader(bytes.NewReader(raw), key))
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "EOF")
-	require.True(t, stringsContainsAny(err.Error(),
-		"MAC mismatch", "decrypt chunk", "header", "corrupted", "secretstream"),
+	msg := err.Error()
+	require.True(t,
+		strings.Contains(msg, "MAC mismatch") ||
+			strings.Contains(msg, "decrypt chunk") ||
+			strings.Contains(msg, "header") ||
+			strings.Contains(msg, "secretstream"),
 		"opaque error: %v", err)
 }
 
@@ -106,7 +111,10 @@ func TestBattleErrorsAreLoud(t *testing.T) {
 	_, err := io.ReadAll(NewReader(bytes.NewReader(raw[:HeaderBytes+2]), key))
 	require.Error(t, err)
 	require.NotEqual(t, io.EOF, err)
-	require.True(t, len(err.Error()) > 20, "error too short: %q", err.Error())
+	require.True(t,
+		strings.Contains(err.Error(), "chunk") || strings.Contains(err.Error(), "MAC") ||
+			strings.Contains(err.Error(), "short") || strings.Contains(err.Error(), "decrypt"),
+		"error class missing: %q", err.Error())
 
 	bad := bytes.Repeat([]byte{5}, KeyBytes)
 	_, err = io.ReadAll(NewReader(bytes.NewReader(raw), bad))
@@ -116,19 +124,6 @@ func TestBattleErrorsAreLoud(t *testing.T) {
 	_, err = io.ReadAll(NewReader(bytes.NewReader(nil), key))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "header")
-}
-
-func stringsContainsAny(s string, subs ...string) bool {
-	for _, sub := range subs {
-		if len(sub) > 0 && (len(s) >= len(sub)) {
-			for i := 0; i+len(sub) <= len(s); i++ {
-				if s[i:i+len(sub)] == sub {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
 
 func TestBattleCorruptEachChunkByte(t *testing.T) {

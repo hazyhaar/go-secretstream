@@ -57,13 +57,13 @@ func (c *Crypter) setup() error {
 	if keyString == "" {
 		keyFileContents, err := os.ReadFile(c.KeyPath)
 		if err != nil {
-			return fmt.Errorf("secretstream Crypter: unable to read key from file: %v", err)
+			return fmt.Errorf("secretstream Crypter: unable to read key from file: %w", err)
 		}
 		keyString = strings.TrimSpace(string(keyFileContents))
 	}
 	key, err := KeyTransform(keyString, c.KeyTransform, KeyBytes)
 	if err != nil {
-		return fmt.Errorf("secretstream Crypter: during key transform: %v", err)
+		return fmt.Errorf("secretstream Crypter: during key transform: %w", err)
 	}
 	c.key = key
 	return nil

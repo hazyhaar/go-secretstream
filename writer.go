@@ -9,6 +9,7 @@ import (
 )
 
 // Writer encrypts plaintext into a secretstream (header + tagged chunks).
+// Close is idempotent. Write after Close returns an error.
 type Writer struct {
 	io.Writer
 
@@ -18,11 +19,16 @@ type Writer struct {
 
 	inIdx int
 
+	// Header is written lazily on the first Write/Close so Pipe-based
+	// consumers can attach the reader before any bytes are produced.
 	onceHeader sync.Once
 
 	key []byte
 
 	headerErr error
+
+	closed  bool
+	closeErr error
 }
 
 // NewWriter creates an encrypting WriteCloser. key must be KeyBytes long.
@@ -42,8 +48,13 @@ func (writer *Writer) writeHeader() {
 		writer.headerErr = fmt.Errorf("secretstream writer: init_push failed: %w", err)
 		return
 	}
-	if _, err := writer.Writer.Write(header); err != nil {
+	n, err := writer.Writer.Write(header)
+	if err != nil {
 		writer.headerErr = fmt.Errorf("secretstream writer: header write failed: %w", err)
+		return
+	}
+	if n != len(header) {
+		writer.headerErr = fmt.Errorf("secretstream writer: header short write (%d/%d)", n, len(header))
 		return
 	}
 	writer.state = st
@@ -51,6 +62,9 @@ func (writer *Writer) writeHeader() {
 
 // Write implements io.Writer.
 func (writer *Writer) Write(p []byte) (n int, err error) {
+	if writer.closed {
+		return 0, fmt.Errorf("secretstream writer: write after close")
+	}
 	writer.onceHeader.Do(writer.writeHeader)
 	if writer.headerErr != nil {
 		return 0, writer.headerErr
@@ -77,21 +91,36 @@ func (writer *Writer) writeNextChunk(last bool) (err error) {
 	if err != nil {
 		return fmt.Errorf("secretstream writer: push failed (plain_len=%d final=%v): %w", writer.inIdx, last, err)
 	}
-	if _, err = writer.Writer.Write(wire); err != nil {
+	n, err := writer.Writer.Write(wire)
+	if err != nil {
 		return fmt.Errorf("secretstream writer: wire write failed (wire_len=%d final=%v): %w", len(wire), last, err)
+	}
+	if n != len(wire) {
+		return fmt.Errorf("secretstream writer: wire short write (%d/%d final=%v)", n, len(wire), last)
 	}
 	writer.inIdx = 0
 	return
 }
 
-// Close implements io.Closer — emits the final tagged chunk.
-func (writer *Writer) Close() (err error) {
-	if closer, ok := writer.Writer.(io.Closer); ok {
-		defer closer.Close()
+// Close implements io.Closer — emits the final tagged chunk. Idempotent:
+// subsequent calls return the first close error (or nil).
+func (writer *Writer) Close() error {
+	if writer.closed {
+		return writer.closeErr
 	}
+	writer.closed = true
+
 	writer.onceHeader.Do(writer.writeHeader)
 	if writer.headerErr != nil {
-		return writer.headerErr
+		writer.closeErr = writer.headerErr
+	} else {
+		writer.closeErr = writer.writeNextChunk(true)
 	}
-	return writer.writeNextChunk(true)
+
+	if closer, ok := writer.Writer.(io.Closer); ok {
+		if cerr := closer.Close(); writer.closeErr == nil {
+			writer.closeErr = cerr
+		}
+	}
+	return writer.closeErr
 }
