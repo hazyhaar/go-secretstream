@@ -65,7 +65,7 @@ Core `push`/`pull` match libsodium C bit-for-bit; `Reader`/`Writer` add WAL-G-st
 
 ## Security notes
 
-- No key/material zeroization after use (normal for Go; no `mlock`).
+- Best-effort `memzero` on ephemeral poly keys and on Writer.Close / Reader FINAL (`st.k`, private key copy). Not a guarantee against GC copies; no `mlock`.
 - Prefer `KeyTransformHex` / `KeyTransformBase64` with full 32-byte keys. `KeyTransformNone` is **legacy WAL-G**: truncates >32 bytes silently and zero-pads short keys (25–31) — reduced entropy / prefix collisions.
 - After a MAC failure, abandon the `Reader` (state is not advanced on mismatch).
 - `Writer.Close` is idempotent; `Write` after `Close` errors.
