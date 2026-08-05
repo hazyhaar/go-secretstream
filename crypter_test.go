@@ -159,7 +159,7 @@ func TestChunkSizeConstant(t *testing.T) {
 func TestCrossWriteGoReadC(t *testing.T) {
 	py := lookupCrossOracle(t)
 	if py == "" {
-		t.Skip("no libsodium cross oracle (install python3-nacl or set SECRETSTREAM_ORACLE)")
+		t.Skip("no libsodium cross oracle (install python3-nacl or set WALG_LIBSODIUM_ORACLE)")
 	}
 	key := bytes.Repeat([]byte{0xab}, KeyBytes)
 	plain := bytes.Repeat([]byte("cross-go-c-"), 900)
@@ -182,7 +182,7 @@ func TestCrossWriteGoReadC(t *testing.T) {
 
 func lookupCrossOracle(t *testing.T) string {
 	t.Helper()
-	if p := os.Getenv("SECRETSTREAM_ORACLE"); p != "" {
+	if p := os.Getenv("WALG_LIBSODIUM_ORACLE"); p != "" {
 		return p
 	}
 	if _, err := exec.LookPath("python3"); err != nil {

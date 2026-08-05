@@ -1,4 +1,4 @@
-// Pure-Go secretstream reader (no CGO). WAL-G framing: ChunkSize plaintext chunks.
+// Pure-Go secretstream reader (no CGO). WAL-G framing.
 // SoT: lateos-ai/wal-g internal/crypto/libsodium.
 
 package secretstream
@@ -9,28 +9,22 @@ import (
 	"sync"
 )
 
-// Reader decrypts a secretstream produced by Writer (or libsodium C with the
-// same framing). Read never returns (0, nil). After MAC failure abandon the
-// Reader. Header is unauthenticated alone (libsodium design).
+// Reader decrypts a secretstream (Writer or libsodium C with same framing).
+// Read never returns (0, nil). After MAC failure abandon the Reader.
 type Reader struct {
 	io.Reader
-
-	state *streamState
-
-	in  []byte
-	out []byte
-
-	outIdx int
-	outLen int
-
+	state      *streamState
+	in         []byte
+	out        []byte
+	outIdx     int
+	outLen     int
 	onceHeader sync.Once
 	key        []byte
 	headerErr  error
 	done       bool
 }
 
-// NewReader creates a decrypting Reader. key must be KeyBytes long.
-// key is copied; the caller's slice is not retained.
+// NewReader creates a decrypting Reader. key is copied.
 func NewReader(reader io.Reader, key []byte) io.Reader {
 	k := make([]byte, len(key))
 	copy(k, key)

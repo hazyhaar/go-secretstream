@@ -34,6 +34,7 @@ const (
 	counterBytes = 4
 	inonceBytes  = 8
 
+	// ChunkSize is WAL-G plaintext framing size.
 	ChunkSize = 8192
 )
 
