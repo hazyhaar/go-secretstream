@@ -36,8 +36,6 @@ func TestWriterWriteAfterClose(t *testing.T) {
 }
 
 func TestCoreEmptyMessageChunk(t *testing.T) {
-	// Core allows empty MESSAGE; WAL-G Reader framing does not demux short
-	// non-final chunks (fixed ChunkSize wire). Documented interop limit.
 	key := bytes.Repeat([]byte{0x33}, KeyBytes)
 	header := make([]byte, HeaderBytes)
 	pushSt, err := initPush(key, header)
@@ -115,7 +113,6 @@ func TestCoreTagPushAndRekey(t *testing.T) {
 	require.Equal(t, []byte("d"), m)
 }
 
-// shortWriter returns (n, nil) with n < len(p) — contract violation; Writer must fail loud.
 type shortWriter struct{}
 
 func (shortWriter) Write(p []byte) (int, error) {

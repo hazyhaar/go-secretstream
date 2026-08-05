@@ -72,13 +72,11 @@ func keyTransformHex(userInput string) ([]byte, error) {
 	return decoded, nil
 }
 
-// keyTransformNone mimics older WAL-G: pad/truncate ASCII key material to KeyBytes.
+// keyTransformNone mimics older WAL-G: pad/truncate ASCII to KeyBytes.
 //
-// WARNING (legacy hazards — prefer KeyTransformHex or KeyTransformBase64):
-//   - inputs longer than KeyBytes are silently truncated to the first 32 bytes
-//     (two passphrases sharing a 32-byte prefix yield the same key);
-//   - inputs of length [minimalKeyLength, KeyBytes) are zero-padded on the right
-//     (reduced key space vs a full 32-byte random key).
+// WARNING (legacy — prefer hex/base64 with full 32-byte keys):
+//   - inputs longer than KeyBytes are silently truncated (prefix collision risk);
+//   - inputs in [minimalKeyLength, KeyBytes) are zero-padded (reduced key space).
 func keyTransformNone(userInput string) ([]byte, error) {
 	if len(userInput) < minimalKeyLength {
 		return nil, &ErrShortKey{keyLength: len(userInput)}

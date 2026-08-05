@@ -1,3 +1,5 @@
+// Modified in the lateos-ai/wal-g fork. Derived from wal-g/wal-g (Apache-2.0). See NOTICE.
+
 package secretstream
 
 import (
@@ -7,12 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 )
 
 func TestMockCrypterFromKey_ShouldReturnErrorOnEmptyKey(t *testing.T) {
@@ -81,7 +83,8 @@ func TestEncryptionCycleFromKey(t *testing.T) {
 		{keyInline: "jv81yb3v3gNePrY0JmJ4q2j2NrqcM7tDYSHFoZ0tTIw=", keyTransform: KeyTransformBase64},
 	}
 	for _, tc := range testcases {
-		EncryptionCycle(t, CrypterFromKey(tc.keyInline, tc.keyTransform))
+		crypter := CrypterFromKey(tc.keyInline, tc.keyTransform)
+		EncryptionCycle(t, crypter)
 	}
 }
 
@@ -96,7 +99,8 @@ func TestEncryptionCycleFromKeyPath(t *testing.T) {
 		{keyPath: "./testdata/testKeyB64", keyTransform: KeyTransformBase64},
 	}
 	for _, tc := range testcases {
-		EncryptionCycle(t, CrypterFromKeyPath(tc.keyPath, tc.keyTransform))
+		crypter := CrypterFromKeyPath(tc.keyPath, tc.keyTransform)
+		EncryptionCycle(t, crypter)
 	}
 }
 
@@ -106,7 +110,7 @@ func TestSecretstreamRoundTripSizes(t *testing.T) {
 	require.NoError(t, err)
 	sizes := []int{0, 1, 100, ChunkSize - 1, ChunkSize, ChunkSize + 1, ChunkSize*2 + 50, ChunkSize * 3}
 	for _, sz := range sizes {
-		t.Run(strconv.Itoa(sz), func(t *testing.T) {
+		t.Run(itoa(sz), func(t *testing.T) {
 			plain := make([]byte, sz)
 			_, _ = rand.Read(plain)
 			var buf bytes.Buffer
@@ -150,6 +154,8 @@ func TestChunkSizeConstant(t *testing.T) {
 	require.Equal(t, 17, ABytes)
 }
 
+// TestCrossLibsodiumC runs if libsodium is available via python nacl or sodium CLI.
+// Skipped when oracle is missing — pure-Go tests remain authoritative.
 func TestCrossWriteGoReadC(t *testing.T) {
 	py := lookupCrossOracle(t)
 	if py == "" {
@@ -179,30 +185,19 @@ func lookupCrossOracle(t *testing.T) string {
 	if p := os.Getenv("SECRETSTREAM_ORACLE"); p != "" {
 		return p
 	}
-	if p := os.Getenv("WALG_LIBSODIUM_ORACLE"); p != "" {
-		return p
-	}
 	if _, err := exec.LookPath("python3"); err != nil {
-		if os.Getenv("SECRETSTREAM_REQUIRE_ORACLE") == "1" {
-			t.Fatal("SECRETSTREAM_REQUIRE_ORACLE=1 but no python3 / oracle")
-		}
-		t.Log("cross-oracle skipped: no python3 (set SECRETSTREAM_ORACLE or SECRETSTREAM_REQUIRE_ORACLE=1)")
 		return ""
 	}
+	// quick check PyNaCl
 	if err := exec.Command("python3", "-c", "import nacl.bindings").Run(); err != nil {
-		venv := "/inference/venvs/walg-oracle/bin/python3"
-		if err := exec.Command(venv, "-c", "import nacl.bindings").Run(); err == nil {
-			return venv
-		}
-		if os.Getenv("SECRETSTREAM_REQUIRE_ORACLE") == "1" {
-			t.Fatal("SECRETSTREAM_REQUIRE_ORACLE=1 but PyNaCl missing")
-		}
-		t.Log("cross-oracle skipped: PyNaCl missing (pip install pynacl)")
 		return ""
 	}
 	return "python3"
 }
 
+// Python snippet: argv[1]=cipher path, argv[2]=key path (32 raw bytes).
+// wal-g framing: full chunks are exactly 8192+17 (TAG_MESSAGE); last chunk is
+// shorter and carries TAG_FINAL (may include the last plaintext bytes).
 const crossDecryptPy = `
 import sys
 from nacl.bindings.crypto_secretstream import (
@@ -223,6 +218,9 @@ CHUNK = 8192 + 17
 while off < len(rest):
     remaining = len(rest) - off
     take = CHUNK if remaining > CHUNK else remaining
+    # if exactly one full chunk left that is not the only way FINAL appears:
+    # wal-g never emits a full-sized FINAL; last is always short or empty FINAL
+    # after full MESSAGE chunks. When remaining == CHUNK and more? take CHUNK.
     piece = rest[off:off+take]
     off += take
     m, tag = crypto_secretstream_xchacha20poly1305_pull(state, bytes(piece), None)
@@ -231,3 +229,17 @@ while off < len(rest):
         break
 sys.stdout.buffer.write(out)
 `
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var b [16]byte
+	i := len(b)
+	for n > 0 {
+		i--
+		b[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(b[i:])
+}

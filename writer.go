@@ -1,4 +1,4 @@
-// Pure-Go secretstream writer (no CGO). WAL-G framing: 8192-byte chunks.
+// Pure-Go secretstream writer (no CGO). WAL-G framing: ChunkSize plaintext chunks.
 
 package secretstream
 
@@ -8,26 +8,21 @@ import (
 	"sync"
 )
 
-// Writer encrypts plaintext into a secretstream (header + tagged chunks).
+// Writer encrypts plaintext into a secretstream.
 // Close is idempotent. Write after Close returns an error.
 type Writer struct {
 	io.Writer
 
 	state *streamState
 
-	in []byte
-
+	in    []byte
 	inIdx int
 
-	// Header is written lazily on the first Write/Close so Pipe-based
-	// consumers can attach the reader before any bytes are produced.
 	onceHeader sync.Once
+	key        []byte
+	headerErr  error
 
-	key []byte
-
-	headerErr error
-
-	closed  bool
+	closed   bool
 	closeErr error
 }
 
@@ -82,7 +77,7 @@ func (writer *Writer) Write(p []byte) (n int, err error) {
 	return
 }
 
-func (writer *Writer) writeNextChunk(last bool) (err error) {
+func (writer *Writer) writeNextChunk(last bool) error {
 	tag := byte(TagMessage)
 	if last {
 		tag = TagFinal
@@ -99,11 +94,10 @@ func (writer *Writer) writeNextChunk(last bool) (err error) {
 		return fmt.Errorf("secretstream writer: wire short write (%d/%d final=%v)", n, len(wire), last)
 	}
 	writer.inIdx = 0
-	return
+	return nil
 }
 
-// Close implements io.Closer — emits the final tagged chunk. Idempotent:
-// subsequent calls return the first close error (or nil).
+// Close implements io.Closer. Idempotent.
 func (writer *Writer) Close() error {
 	if writer.closed {
 		return writer.closeErr

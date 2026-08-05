@@ -1,6 +1,6 @@
 // Pure-Go crypto_secretstream_xchacha20poly1305.
-// Bit-compatible with libsodium secretstream_xchacha20poly1305.c (manual
-// ChaCha20-IETF + Poly1305 construction, not AEAD Seal of padded message).
+// Bit-compatible with libsodium secretstream_xchacha20poly1305.c.
+// Source of truth developed in lateos-ai/wal-g internal/crypto/libsodium.
 
 package secretstream
 
@@ -34,14 +34,13 @@ const (
 	counterBytes = 4
 	inonceBytes  = 8
 
-	// ChunkSize is the plaintext framing size used by WAL-G (and this package's
-	// Reader/Writer). Core push/pull accept any length.
+	// ChunkSize is the plaintext framing size used by WAL-G Reader/Writer.
 	ChunkSize = 8192
 )
 
 type streamState struct {
 	k     [32]byte
-	nonce [12]byte // counter_le32 || inonce_8
+	nonce [12]byte
 }
 
 func initPush(key []byte, header []byte) (*streamState, error) {
@@ -259,8 +258,6 @@ func (st *streamState) pull(wire []byte) (m []byte, tag byte, err error) {
 		c2.XORKeyStream(m, ciph)
 	}
 
-	// Advance only after MAC success so a failed pull leaves state reusable
-	// for diagnostics; Reader always abandons on error.
 	if err := st.advance(storedMAC); err != nil {
 		return nil, 0, err
 	}

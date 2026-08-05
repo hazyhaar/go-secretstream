@@ -20,6 +20,7 @@ func TestBattleRandomSizes(t *testing.T) {
 	key := make([]byte, KeyBytes)
 	_, err := rand.Read(key)
 	require.NoError(t, err)
+	// Boundaries around chunk multiples + random
 	sizes := []int{
 		0, 1, 2, 15, 16, 17, 31, 32, 63, 64, 65,
 		1000, 4095, 4096, 4097,
@@ -52,6 +53,7 @@ func TestBattlePartialWrites(t *testing.T) {
 	_, _ = rand.Read(plain)
 	var buf bytes.Buffer
 	w := NewWriter(&buf, key)
+	// tiny writes
 	for i := 0; i < len(plain); {
 		n := 1 + int(plain[i]%17)
 		if i+n > len(plain) {
@@ -90,13 +92,14 @@ func TestBattleCorruptHeader(t *testing.T) {
 	raw[3] ^= 0xff
 	_, err := io.ReadAll(NewReader(bytes.NewReader(raw), key))
 	require.Error(t, err)
+	// Fail-loud: message must name the failure class (not a bare EOF).
 	require.NotContains(t, err.Error(), "EOF")
 	msg := err.Error()
 	require.True(t,
 		strings.Contains(msg, "MAC mismatch") ||
 			strings.Contains(msg, "decrypt chunk") ||
 			strings.Contains(msg, "header") ||
-			strings.Contains(msg, "secretstream"),
+			strings.Contains(msg, "libsodium"),
 		"opaque error: %v", err)
 }
 
@@ -108,6 +111,7 @@ func TestBattleErrorsAreLoud(t *testing.T) {
 	_ = w.Close()
 	raw := append([]byte(nil), buf.Bytes()...)
 
+	// truncated
 	_, err := io.ReadAll(NewReader(bytes.NewReader(raw[:HeaderBytes+2]), key))
 	require.Error(t, err)
 	require.NotEqual(t, io.EOF, err)
@@ -116,11 +120,13 @@ func TestBattleErrorsAreLoud(t *testing.T) {
 			strings.Contains(err.Error(), "short") || strings.Contains(err.Error(), "decrypt"),
 		"error class missing: %q", err.Error())
 
+	// wrong key
 	bad := bytes.Repeat([]byte{5}, KeyBytes)
 	_, err = io.ReadAll(NewReader(bytes.NewReader(raw), bad))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "MAC mismatch")
 
+	// empty input
 	_, err = io.ReadAll(NewReader(bytes.NewReader(nil), key))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "header")
@@ -133,7 +139,8 @@ func TestBattleCorruptEachChunkByte(t *testing.T) {
 	_, _ = w.Write(bytes.Repeat([]byte("m"), ChunkSize+100))
 	_ = w.Close()
 	raw := buf.Bytes()
-	for _, off := range []int{HeaderBytes, HeaderBytes + 10, len(raw) - 5, len(raw) / 2} {
+	// flip one byte in body (skip first few header checks already covered)
+	for _, off := range []int{HeaderBytes, HeaderBytes + 10, len(raw) - 5, len(raw)/2} {
 		if off < 0 || off >= len(raw) {
 			continue
 		}
@@ -188,7 +195,7 @@ func TestBattleLargeStream(t *testing.T) {
 		t.Skip("large")
 	}
 	key := bytes.Repeat([]byte{0xee}, KeyBytes)
-	const n = 2 * 1024 * 1024
+	const n = 2 * 1024 * 1024 // 2 MiB
 	plain := make([]byte, n)
 	_, _ = rand.Read(plain)
 	pr, pw := io.Pipe()
@@ -210,6 +217,7 @@ func TestBattleLargeStream(t *testing.T) {
 	require.Equal(t, plain, out)
 }
 
+// TestCrossWriteCReadGo: PyNaCl encrypts, Go decrypts (inverse of TestCrossWriteGoReadC).
 func TestCrossWriteCReadGo(t *testing.T) {
 	py := lookupCrossOracle(t)
 	if py == "" {
@@ -234,6 +242,7 @@ func TestCrossWriteCReadGo(t *testing.T) {
 	require.Equal(t, plain, got)
 }
 
+// wal-g style: push full 8192 MESSAGE chunks then FINAL with remainder (may be empty).
 const crossEncryptPy = `
 import sys
 from nacl.bindings.crypto_secretstream import (
