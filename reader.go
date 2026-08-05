@@ -82,6 +82,17 @@ func (reader *Reader) Read(p []byte) (n int, err error) {
 		if reader.done {
 			return 0, io.EOF
 		}
+		// Zero-copy fast path: when caller's buffer p can hold a full chunk (>= ChunkSize),
+		// decrypt directly into p without copying to reader.out
+		if len(p) >= ChunkSize {
+			plainLen, rerr := reader.readNextChunkTo(p)
+			if plainLen > 0 {
+				return plainLen, nil
+			}
+			if rerr != nil {
+				return 0, rerr
+			}
+		}
 		if err = reader.readNextChunk(); err != nil {
 			return 0, err
 		}
