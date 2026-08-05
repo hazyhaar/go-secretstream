@@ -9,7 +9,7 @@ Pure-Go implementation of **libsodium `crypto_secretstream_xchacha20poly1305`**,
 ## Install
 
 ```bash
-go get github.com/lateos-ai/go-secretstream@latest
+go get github.com/hazyhaar/go-secretstream@latest
 ```
 
 ## Usage
@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/lateos-ai/go-secretstream"
+	"github.com/hazyhaar/go-secretstream"
 )
 
 func main() {

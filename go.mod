@@ -1,4 +1,4 @@
-module github.com/lateos-ai/go-secretstream
+module github.com/hazyhaar/go-secretstream
 
 go 1.23.0
 
