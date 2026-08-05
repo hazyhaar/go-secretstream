@@ -139,8 +139,14 @@ func (writer *Writer) Close() error {
 		writer.state.wipe()
 	}
 	memzero(writer.key)
+	memzero(writer.in)
 	if err != nil {
 		writer.closeErr = fmt.Errorf("secretstream writer: close write failed: %w", err)
+	}
+	if closer, ok := writer.Writer.(io.Closer); ok {
+		if cerr := closer.Close(); writer.closeErr == nil {
+			writer.closeErr = cerr
+		}
 	}
 	return writer.closeErr
 }
