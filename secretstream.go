@@ -1,5 +1,5 @@
 // Package secretstream55 provides ultra-fast streaming encryption and decryption in Pure Go using XChaCha20-Poly1305 AEAD.
-package secretstream55
+package secretstream
 
 import (
 	"crypto/cipher"
@@ -44,21 +44,21 @@ func NewLibsodiumEncryptor(w io.Writer, key []byte) (*Encryptor, error) {
 
 func newEncryptor(w io.Writer, key []byte, libsodium bool) (*Encryptor, error) {
 	if len(key) != 32 {
-		return nil, fmt.Errorf("secretstream55: key must be 32 bytes")
+		return nil, fmt.Errorf("secretstream: key must be 32 bytes")
 	}
 
 	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
-		return nil, fmt.Errorf("secretstream55: failed to create AEAD: %w", err)
+		return nil, fmt.Errorf("secretstream: failed to create AEAD: %w", err)
 	}
 
 	nonce := make([]byte, 24)
 	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("secretstream55: failed to generate nonce: %w", err)
+		return nil, fmt.Errorf("secretstream: failed to generate nonce: %w", err)
 	}
 
 	if _, err := w.Write(nonce); err != nil {
-		return nil, fmt.Errorf("secretstream55: failed to write header nonce: %w", err)
+		return nil, fmt.Errorf("secretstream: failed to write header nonce: %w", err)
 	}
 
 	return &Encryptor{
@@ -135,17 +135,17 @@ func NewLibsodiumDecryptor(r io.Reader, key []byte) (*Decryptor, error) {
 
 func newDecryptor(r io.Reader, key []byte, libsodium bool) (*Decryptor, error) {
 	if len(key) != 32 {
-		return nil, fmt.Errorf("secretstream55: key must be 32 bytes")
+		return nil, fmt.Errorf("secretstream: key must be 32 bytes")
 	}
 
 	aead, err := chacha20poly1305.NewX(key)
 	if err != nil {
-		return nil, fmt.Errorf("secretstream55: failed to create AEAD: %w", err)
+		return nil, fmt.Errorf("secretstream: failed to create AEAD: %w", err)
 	}
 
 	nonce := make([]byte, 24)
 	if _, err := io.ReadFull(r, nonce); err != nil {
-		return nil, fmt.Errorf("secretstream55: failed to read header nonce: %w", err)
+		return nil, fmt.Errorf("secretstream: failed to read header nonce: %w", err)
 	}
 
 	return &Decryptor{
@@ -173,7 +173,7 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 	chunkLen := binary.BigEndian.Uint32(lenBuf)
 	sealed := make([]byte, chunkLen)
 	if _, err := io.ReadFull(d.r, sealed); err != nil {
-		return 0, fmt.Errorf("secretstream55: read payload failed: %w", err)
+		return 0, fmt.Errorf("secretstream: read payload failed: %w", err)
 	}
 
 	ad := make([]byte, 8)
@@ -182,12 +182,12 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 
 	plainText, err := d.aead.Open(nil, d.nonce, sealed, ad)
 	if err != nil {
-		return 0, fmt.Errorf("secretstream55: AEAD authentication check failed: %w", err)
+		return 0, fmt.Errorf("secretstream: AEAD authentication check failed: %w", err)
 	}
 
 	if d.libsodium {
 		if len(plainText) < 1 {
-			return 0, fmt.Errorf("secretstream55: invalid libsodium payload format")
+			return 0, fmt.Errorf("secretstream: invalid libsodium payload format")
 		}
 		// Extract trailing Libsodium tag (0x00 TagMessage, 0x03 TagFinal, etc.)
 		plainText = plainText[:len(plainText)-1]

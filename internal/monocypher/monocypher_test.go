@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"code.hazyhaar.fr/devhoros/pkg/secretstream55/internal/monocypher"
+	"github.com/hazyhaar/go-secretstream/internal/monocypher"
 )
 
 func TestTranspiledMonocypherAEAD(t *testing.T) {

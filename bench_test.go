@@ -1,10 +1,10 @@
-package secretstream55_test
+package secretstream_test
 
 import (
 	"crypto/rand"
 	"testing"
 
-	"code.hazyhaar.fr/devhoros/pkg/secretstream55/internal/monocypher"
+	"github.com/hazyhaar/go-secretstream/internal/monocypher"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
