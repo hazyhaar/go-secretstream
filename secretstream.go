@@ -53,8 +53,8 @@ func newEncryptor(w io.Writer, key []byte, libsodium bool) (*Encryptor, error) {
 	copy(enc.key[:], key)
 	enc.w = w
 	enc.libsodium = libsodium
-	enc.wireBuf = make([]byte, 4+ChunkSize+1+TagSize)
-	enc.scratchPayload = make([]byte, ChunkSize+1)
+	enc.wireBuf = make([]byte, 4+ChunkSize+1+TagSize+64)
+	enc.scratchPayload = make([]byte, ChunkSize+64)
 
 	if _, err := rand.Read(enc.nonce[:]); err != nil {
 		return nil, fmt.Errorf("secretstream55: failed to generate nonce: %w", err)
@@ -88,8 +88,8 @@ func (e *Encryptor) Write(p []byte) (int, error) {
 		e.seq++
 
 		var payload []byte
+		tag := TagMessage
 		if e.libsodium {
-			tag := TagMessage
 			if len(p) == 0 {
 				tag = TagFinal
 			}
@@ -102,7 +102,7 @@ func (e *Encryptor) Write(p []byte) (int, error) {
 
 		var mac [16]byte
 		dstCipher := e.wireBuf[4 : 4+len(payload)]
-		_, err := c2simd.AEADLockSIMD256_FusedDst(dstCipher, &mac, e.key[:], chunkNonce[:], e.adBuf[:], payload)
+		_, err := c2simd.AEADLockDst(dstCipher, &mac, e.key[:], chunkNonce[:], e.adBuf[:], payload)
 		if err != nil {
 			return totalWritten, fmt.Errorf("secretstream55: AEAD lock failed: %w", err)
 		}
@@ -113,10 +113,15 @@ func (e *Encryptor) Write(p []byte) (int, error) {
 		totalWireLen := uint32(len(payload) + 16)
 		binary.BigEndian.PutUint32(e.wireBuf[0:4], totalWireLen)
 
-		// UNE SEULE APPEL I/O SYSTÈME pour l'ensemble du paquet (En-tête + Ciphertext + MAC)
 		frameLen := 4 + len(payload) + 16
 		if _, err := e.w.Write(e.wireBuf[:frameLen]); err != nil {
 			return totalWritten, err
+		}
+
+		// Prise en charge de la rotation de clé TagRekey (0x02)
+		if tag == TagRekey {
+			c2simd.HChaCha20_SIMD128(e.key[:], e.nonce[:16], e.key[:])
+			e.seq = 0
 		}
 
 		totalWritten += chunkLen
@@ -157,8 +162,9 @@ func newDecryptor(r io.Reader, key []byte, libsodium bool) (*Decryptor, error) {
 	copy(dec.key[:], key)
 	dec.r = r
 	dec.libsodium = libsodium
-	dec.inBuf = make([]byte, ChunkSize+TagSize+32)
-	dec.plainBuf = make([]byte, ChunkSize+TagSize+32)
+	// Buffers pré-dimensionnés pour garantir 0 allocation sur Read() steady-state
+	dec.inBuf = make([]byte, ChunkSize+TagSize+64)
+	dec.plainBuf = make([]byte, ChunkSize+TagSize+64)
 
 	if _, err := io.ReadFull(r, dec.nonce[:]); err != nil {
 		return nil, fmt.Errorf("secretstream55: failed to read header nonce: %w", err)
@@ -167,7 +173,7 @@ func newDecryptor(r io.Reader, key []byte, libsodium bool) (*Decryptor, error) {
 	return &dec, nil
 }
 
-// Read decrypts p from the underlying encrypted stream using unique chunk nonces (N_chunk = N_base ^ seq).
+// Read decrypts p from the underlying encrypted stream using unique chunk nonces with 0 allocation steady-state.
 func (d *Decryptor) Read(p []byte) (int, error) {
 	if len(d.outBuf) > 0 {
 		n := copy(p, d.outBuf)
@@ -212,7 +218,7 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 	}
 	plainDst := d.plainBuf[:cipherLen]
 
-	unlocked, err := c2simd.AEADUnlockSIMD256_FusedDst(plainDst, d.key[:], chunkNonce[:], d.adBuf[:], cipherText, mac)
+	unlocked, err := c2simd.AEADUnlockDst(plainDst, d.key[:], chunkNonce[:], d.adBuf[:], cipherText, mac)
 	if err != nil {
 		return 0, fmt.Errorf("secretstream55: AEAD unlock failed: %w", err)
 	}
@@ -223,8 +229,9 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 		}
 		tag := unlocked[len(unlocked)-1]
 		unlocked = unlocked[:len(unlocked)-1]
-		if tag == TagFinal {
-			// Signal final chunk
+		if tag == TagRekey {
+			c2simd.HChaCha20_SIMD128(d.key[:], d.nonce[:16], d.key[:])
+			d.seq = 0
 		}
 	}
 

@@ -39,6 +39,40 @@ func BenchmarkSecretStream55_SteadyState_WriteOnly_1MB(b *testing.B) {
 	}
 }
 
+// BenchmarkSecretStream55_SteadyState_ReadOnly_1MB mesure la lecture seule en régime permanent (0 allocation hot path)
+func BenchmarkSecretStream55_SteadyState_ReadOnly_1MB(b *testing.B) {
+	key := make([]byte, 32)
+	rand.Read(key)
+	payload := make([]byte, 1024*1024)
+	rand.Read(payload)
+
+	var encBuf bytes.Buffer
+	enc, err := secretstream55.NewEncryptor(&encBuf, key)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := enc.Write(payload); err != nil {
+		b.Fatal(err)
+	}
+	encryptedBytes := append([]byte(nil), encBuf.Bytes()...)
+
+	plainDst := make([]byte, len(payload))
+	b.SetBytes(int64(len(payload)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(encryptedBytes)
+		dec, err := secretstream55.NewDecryptor(r, key)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, err = io.ReadFull(dec, plainDst)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // BenchmarkSecretStream55_FullDuplex_1MB mesure le cycle complet chiffrement + déchiffrement en buffers préalloués
 func BenchmarkSecretStream55_FullDuplex_1MB(b *testing.B) {
 	key := make([]byte, 32)
@@ -89,7 +123,7 @@ func BenchmarkC2SIMD_Engine_1MB(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := c2simd.AEADLockSIMD256_FusedDst(dstBuf, &mac, key, nonce, ad, payload)
+		_, err := c2simd.AEADLockDst(dstBuf, &mac, key, nonce, ad, payload)
 		if err != nil {
 			b.Fatal(err)
 		}
