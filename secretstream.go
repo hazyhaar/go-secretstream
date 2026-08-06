@@ -120,7 +120,7 @@ func (e *Encryptor) Write(p []byte) (int, error) {
 
 		// Prise en charge de la rotation de clé TagRekey (0x02)
 		if tag == TagRekey {
-			c2simd.HChaCha20_SIMD128(e.key[:], e.nonce[:16], e.key[:])
+			c2simd.HChaCha20(e.key[:], e.nonce[:16], e.key[:])
 			e.seq = 0
 		}
 
@@ -230,7 +230,7 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 		tag := unlocked[len(unlocked)-1]
 		unlocked = unlocked[:len(unlocked)-1]
 		if tag == TagRekey {
-			c2simd.HChaCha20_SIMD128(d.key[:], d.nonce[:16], d.key[:])
+			c2simd.HChaCha20(d.key[:], d.nonce[:16], d.key[:])
 			d.seq = 0
 		}
 	}
