@@ -29,9 +29,8 @@ type Encryptor struct {
 	nonce          [24]byte
 	seq            uint64
 	libsodium      bool
-	buf            []byte
+	wireBuf        []byte // Buffer contigu unique : 4B taille + ChunkSize + 16B MAC
 	scratchPayload []byte
-	lenBuf         [4]byte
 	adBuf          [8]byte
 }
 
@@ -54,7 +53,7 @@ func newEncryptor(w io.Writer, key []byte, libsodium bool) (*Encryptor, error) {
 	copy(enc.key[:], key)
 	enc.w = w
 	enc.libsodium = libsodium
-	enc.buf = make([]byte, ChunkSize+TagSize+16)
+	enc.wireBuf = make([]byte, 4+ChunkSize+1+TagSize)
 	enc.scratchPayload = make([]byte, ChunkSize+1)
 
 	if _, err := rand.Read(enc.nonce[:]); err != nil {
@@ -68,7 +67,7 @@ func newEncryptor(w io.Writer, key []byte, libsodium bool) (*Encryptor, error) {
 	return &enc, nil
 }
 
-// Write encrypts p and writes encrypted chunks to the underlying io.Writer without heap allocations per chunk.
+// Write encrypts p and writes encrypted chunks to the underlying io.Writer using unique chunk nonces (N_chunk = N_base ^ seq).
 func (e *Encryptor) Write(p []byte) (int, error) {
 	totalWritten := 0
 	for len(p) > 0 {
@@ -78,6 +77,12 @@ func (e *Encryptor) Write(p []byte) (int, error) {
 		}
 		chunk := p[:chunkLen]
 		p = p[chunkLen:]
+
+		// P0 Sécurité : Dérivation du nonce unique par chunk (N_chunk = N_base ^ seq)
+		var chunkNonce [24]byte
+		copy(chunkNonce[:], e.nonce[:])
+		baseSeq := binary.BigEndian.Uint64(e.nonce[16:24])
+		binary.BigEndian.PutUint64(chunkNonce[16:24], baseSeq^e.seq)
 
 		binary.BigEndian.PutUint64(e.adBuf[:], e.seq)
 		e.seq++
@@ -96,20 +101,21 @@ func (e *Encryptor) Write(p []byte) (int, error) {
 		}
 
 		var mac [16]byte
-		cipherText, err := c2simd.AEADLockDst(e.buf[:len(payload)], &mac, e.key[:], e.nonce[:], e.adBuf[:], payload)
+		dstCipher := e.wireBuf[4 : 4+len(payload)]
+		_, err := c2simd.AEADLockSIMD256_FusedDst(dstCipher, &mac, e.key[:], chunkNonce[:], e.adBuf[:], payload)
 		if err != nil {
 			return totalWritten, fmt.Errorf("secretstream55: AEAD lock failed: %w", err)
 		}
 
-		binary.BigEndian.PutUint32(e.lenBuf[:], uint32(len(cipherText)+16))
+		macOffset := 4 + len(payload)
+		copy(e.wireBuf[macOffset:macOffset+16], mac[:])
 
-		if _, err := e.w.Write(e.lenBuf[:]); err != nil {
-			return totalWritten, err
-		}
-		if _, err := e.w.Write(cipherText); err != nil {
-			return totalWritten, err
-		}
-		if _, err := e.w.Write(mac[:]); err != nil {
+		totalWireLen := uint32(len(payload) + 16)
+		binary.BigEndian.PutUint32(e.wireBuf[0:4], totalWireLen)
+
+		// UNE SEULE APPEL I/O SYSTÈME pour l'ensemble du paquet (En-tête + Ciphertext + MAC)
+		frameLen := 4 + len(payload) + 16
+		if _, err := e.w.Write(e.wireBuf[:frameLen]); err != nil {
 			return totalWritten, err
 		}
 
@@ -151,8 +157,8 @@ func newDecryptor(r io.Reader, key []byte, libsodium bool) (*Decryptor, error) {
 	copy(dec.key[:], key)
 	dec.r = r
 	dec.libsodium = libsodium
-	dec.inBuf = make([]byte, ChunkSize+TagSize+16)
-	dec.plainBuf = make([]byte, ChunkSize+TagSize+16)
+	dec.inBuf = make([]byte, ChunkSize+TagSize+32)
+	dec.plainBuf = make([]byte, ChunkSize+TagSize+32)
 
 	if _, err := io.ReadFull(r, dec.nonce[:]); err != nil {
 		return nil, fmt.Errorf("secretstream55: failed to read header nonce: %w", err)
@@ -161,7 +167,7 @@ func newDecryptor(r io.Reader, key []byte, libsodium bool) (*Decryptor, error) {
 	return &dec, nil
 }
 
-// Read decrypts p from the underlying encrypted stream using c2simd SIMD256.
+// Read decrypts p from the underlying encrypted stream using unique chunk nonces (N_chunk = N_base ^ seq).
 func (d *Decryptor) Read(p []byte) (int, error) {
 	if len(d.outBuf) > 0 {
 		n := copy(p, d.outBuf)
@@ -192,28 +198,40 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 	cipherText := payloadBuf[:cipherLen]
 	mac := payloadBuf[cipherLen:]
 
+	// P0 Sécurité : Dérivation du nonce unique par chunk (N_chunk = N_base ^ seq)
+	var chunkNonce [24]byte
+	copy(chunkNonce[:], d.nonce[:])
+	baseSeq := binary.BigEndian.Uint64(d.nonce[16:24])
+	binary.BigEndian.PutUint64(chunkNonce[16:24], baseSeq^d.seq)
+
 	binary.BigEndian.PutUint64(d.adBuf[:], d.seq)
 	d.seq++
 
 	if cap(d.plainBuf) < cipherLen {
 		d.plainBuf = make([]byte, cipherLen)
 	}
+	plainDst := d.plainBuf[:cipherLen]
 
-	plainText, err := c2simd.AEADUnlockDst(d.plainBuf[:cipherLen], d.key[:], d.nonce[:], d.adBuf[:], cipherText, mac)
+	unlocked, err := c2simd.AEADUnlockSIMD256_FusedDst(plainDst, d.key[:], chunkNonce[:], d.adBuf[:], cipherText, mac)
 	if err != nil {
-		return 0, fmt.Errorf("secretstream55: AEAD authentication check failed: %w", err)
+		return 0, fmt.Errorf("secretstream55: AEAD unlock failed: %w", err)
 	}
 
 	if d.libsodium {
-		if len(plainText) < 1 {
-			return 0, fmt.Errorf("secretstream55: invalid libsodium payload format")
+		if len(unlocked) == 0 {
+			return 0, fmt.Errorf("secretstream55: empty libsodium payload")
 		}
-		plainText = plainText[:len(plainText)-1]
+		tag := unlocked[len(unlocked)-1]
+		unlocked = unlocked[:len(unlocked)-1]
+		if tag == TagFinal {
+			// Signal final chunk
+		}
 	}
 
-	n := copy(p, plainText)
-	if n < len(plainText) {
-		d.outBuf = plainText[n:]
+	n := copy(p, unlocked)
+	if n < len(unlocked) {
+		d.outBuf = unlocked[n:]
 	}
+
 	return n, nil
 }
