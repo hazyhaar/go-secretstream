@@ -1,4 +1,4 @@
-package secretstream_test
+package secretstream55_test
 
 import (
 	"crypto/rand"

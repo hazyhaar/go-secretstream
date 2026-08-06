@@ -1,4 +1,4 @@
-package secretstream_test
+package secretstream55_test
 
 import (
 	"bytes"
@@ -18,7 +18,7 @@ func TestSecretStreamRoundtrip(t *testing.T) {
 	payload := []byte("Highly confidential data stream encrypted using SIMD-accelerated XChaCha20-Poly1305 in Pure Go (CGO_ENABLED=0).")
 
 	var encryptedBuf bytes.Buffer
-	enc, err := secretstream.NewEncryptor(&encryptedBuf, key)
+	enc, err := secretstream55.NewEncryptor(&encryptedBuf, key)
 	if err != nil {
 		t.Fatalf("NewEncryptor failed: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestSecretStreamRoundtrip(t *testing.T) {
 		t.Fatalf("enc.Write failed: %v", err)
 	}
 
-	dec, err := secretstream.NewDecryptor(&encryptedBuf, key)
+	dec, err := secretstream55.NewDecryptor(&encryptedBuf, key)
 	if err != nil {
 		t.Fatalf("NewDecryptor failed: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestLibsodiumFramingRoundtrip(t *testing.T) {
 	payload := []byte("WAL-G archival stream encrypted with Libsodium crypto_secretstream C framing support in Pure Go.")
 
 	var encryptedBuf bytes.Buffer
-	enc, err := secretstream.NewLibsodiumEncryptor(&encryptedBuf, key)
+	enc, err := secretstream55.NewLibsodiumEncryptor(&encryptedBuf, key)
 	if err != nil {
 		t.Fatalf("NewLibsodiumEncryptor failed: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestLibsodiumFramingRoundtrip(t *testing.T) {
 		t.Fatalf("enc.Write failed: %v", err)
 	}
 
-	dec, err := secretstream.NewLibsodiumDecryptor(&encryptedBuf, key)
+	dec, err := secretstream55.NewLibsodiumDecryptor(&encryptedBuf, key)
 	if err != nil {
 		t.Fatalf("NewLibsodiumDecryptor failed: %v", err)
 	}
