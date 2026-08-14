@@ -295,6 +295,9 @@ func aead_interleaved_write_simd(ctx *Crypto_aead_ctx, polyCtx *Crypto_poly1305_
 
 	// Chiffrement du 1er chunk (Chunk 0)
 	{
+		chunk0PT := (*[256]byte)(plain_text[0:256])
+		chunk0CT := (*[256]byte)(cipher_text[0:256])
+
 		v0_A, v1_A, v2_A, v3_A := st0, st1, st2, st3_A
 		v0_B, v1_B, v2_B, v3_B := st0, st1, st2, st3_B
 
@@ -315,28 +318,28 @@ func aead_interleaved_write_simd(ctx *Crypto_aead_ctx, polyCtx *Crypto_poly1305_
 
 		// Store Chunk 0
 		k0_0, k0_1, k0_2, k0_3 := v0_A.GetLo().AsUint8x16(), v1_A.GetLo().AsUint8x16(), v2_A.GetLo().AsUint8x16(), v3_A.GetLo().AsUint8x16()
-		archsimd.LoadUint8x16(plain_text[0:16]).Xor(k0_0).Store(cipher_text[0:16])
-		archsimd.LoadUint8x16(plain_text[16:32]).Xor(k0_1).Store(cipher_text[16:32])
-		archsimd.LoadUint8x16(plain_text[32:48]).Xor(k0_2).Store(cipher_text[32:48])
-		archsimd.LoadUint8x16(plain_text[48:64]).Xor(k0_3).Store(cipher_text[48:64])
+		archsimd.LoadUint8x16(chunk0PT[0:16]).Xor(k0_0).Store(chunk0CT[0:16])
+		archsimd.LoadUint8x16(chunk0PT[16:32]).Xor(k0_1).Store(chunk0CT[16:32])
+		archsimd.LoadUint8x16(chunk0PT[32:48]).Xor(k0_2).Store(chunk0CT[32:48])
+		archsimd.LoadUint8x16(chunk0PT[48:64]).Xor(k0_3).Store(chunk0CT[48:64])
 
 		k1_0, k1_1, k1_2, k1_3 := v0_A.GetHi().AsUint8x16(), v1_A.GetHi().AsUint8x16(), v2_A.GetHi().AsUint8x16(), v3_A.GetHi().AsUint8x16()
-		archsimd.LoadUint8x16(plain_text[64:80]).Xor(k1_0).Store(cipher_text[64:80])
-		archsimd.LoadUint8x16(plain_text[80:96]).Xor(k1_1).Store(cipher_text[80:96])
-		archsimd.LoadUint8x16(plain_text[96:112]).Xor(k1_2).Store(cipher_text[96:112])
-		archsimd.LoadUint8x16(plain_text[112:128]).Xor(k1_3).Store(cipher_text[112:128])
+		archsimd.LoadUint8x16(chunk0PT[64:80]).Xor(k1_0).Store(chunk0CT[64:80])
+		archsimd.LoadUint8x16(chunk0PT[80:96]).Xor(k1_1).Store(chunk0CT[80:96])
+		archsimd.LoadUint8x16(chunk0PT[96:112]).Xor(k1_2).Store(chunk0CT[96:112])
+		archsimd.LoadUint8x16(chunk0PT[112:128]).Xor(k1_3).Store(chunk0CT[112:128])
 
 		k2_0, k2_1, k2_2, k2_3 := v0_B.GetLo().AsUint8x16(), v1_B.GetLo().AsUint8x16(), v2_B.GetLo().AsUint8x16(), v3_B.GetLo().AsUint8x16()
-		archsimd.LoadUint8x16(plain_text[128:144]).Xor(k2_0).Store(cipher_text[128:144])
-		archsimd.LoadUint8x16(plain_text[144:160]).Xor(k2_1).Store(cipher_text[144:160])
-		archsimd.LoadUint8x16(plain_text[160:176]).Xor(k2_2).Store(cipher_text[160:176])
-		archsimd.LoadUint8x16(plain_text[176:192]).Xor(k2_3).Store(cipher_text[176:192])
+		archsimd.LoadUint8x16(chunk0PT[128:144]).Xor(k2_0).Store(chunk0CT[128:144])
+		archsimd.LoadUint8x16(chunk0PT[144:160]).Xor(k2_1).Store(chunk0CT[144:160])
+		archsimd.LoadUint8x16(chunk0PT[160:176]).Xor(k2_2).Store(chunk0CT[160:176])
+		archsimd.LoadUint8x16(chunk0PT[176:192]).Xor(k2_3).Store(chunk0CT[176:192])
 
 		k3_0, k3_1, k3_2, k3_3 := v0_B.GetHi().AsUint8x16(), v1_B.GetHi().AsUint8x16(), v2_B.GetHi().AsUint8x16(), v3_B.GetHi().AsUint8x16()
-		archsimd.LoadUint8x16(plain_text[192:208]).Xor(k3_0).Store(cipher_text[192:208])
-		archsimd.LoadUint8x16(plain_text[208:224]).Xor(k3_1).Store(cipher_text[208:224])
-		archsimd.LoadUint8x16(plain_text[224:240]).Xor(k3_2).Store(cipher_text[224:240])
-		archsimd.LoadUint8x16(plain_text[240:256]).Xor(k3_3).Store(cipher_text[240:256])
+		archsimd.LoadUint8x16(chunk0PT[192:208]).Xor(k3_0).Store(chunk0CT[192:208])
+		archsimd.LoadUint8x16(chunk0PT[208:224]).Xor(k3_1).Store(chunk0CT[208:224])
+		archsimd.LoadUint8x16(chunk0PT[224:240]).Xor(k3_2).Store(chunk0CT[224:240])
+		archsimd.LoadUint8x16(chunk0PT[240:256]).Xor(k3_3).Store(chunk0CT[240:256])
 
 		currCtr += 4
 		st3_A = st3_A.Add(ctrInc4)
@@ -351,56 +354,60 @@ func aead_interleaved_write_simd(ctx *Crypto_aead_ctx, polyCtx *Crypto_poly1305_
 		prevOff := int((c - 1) * 256)
 		currOff := int(c * 256)
 
+		prevChunk := (*[256]byte)(cipher_text[prevOff : prevOff+256])
+		currPT := (*[256]byte)(plain_text[currOff : currOff+256])
+		currCT := (*[256]byte)(cipher_text[currOff : currOff+256])
+
 		v0_A, v1_A, v2_A, v3_A := st0, st1, st2, st3_A
 		v0_B, v1_B, v2_B, v3_B := st0, st1, st2, st3_B
 
 		// Tour 0 : Poly blocks 0 & 1
 		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
 		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff:prevOff+8]), binary.LittleEndian.Uint64(cipher_text[prevOff+8:prevOff+16]))
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+16:prevOff+24]), binary.LittleEndian.Uint64(cipher_text[prevOff+24:prevOff+32]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[0:8]), binary.LittleEndian.Uint64(prevChunk[8:16]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[16:24]), binary.LittleEndian.Uint64(prevChunk[24:32]))
 
 		// Tour 1 : Poly blocks 2 & 3
 		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
 		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+32:prevOff+40]), binary.LittleEndian.Uint64(cipher_text[prevOff+40:prevOff+48]))
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+48:prevOff+56]), binary.LittleEndian.Uint64(cipher_text[prevOff+56:prevOff+64]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[32:40]), binary.LittleEndian.Uint64(prevChunk[40:48]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[48:56]), binary.LittleEndian.Uint64(prevChunk[56:64]))
 
 		// Tour 2 : Poly blocks 4 & 5
 		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
 		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+64:prevOff+72]), binary.LittleEndian.Uint64(cipher_text[prevOff+72:prevOff+80]))
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+80:prevOff+88]), binary.LittleEndian.Uint64(cipher_text[prevOff+88:prevOff+96]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[64:72]), binary.LittleEndian.Uint64(prevChunk[72:80]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[80:88]), binary.LittleEndian.Uint64(prevChunk[88:96]))
 
 		// Tour 3 : Poly blocks 6 & 7
 		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
 		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+96:prevOff+104]), binary.LittleEndian.Uint64(cipher_text[prevOff+104:prevOff+112]))
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+112:prevOff+120]), binary.LittleEndian.Uint64(cipher_text[prevOff+120:prevOff+128]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[96:104]), binary.LittleEndian.Uint64(prevChunk[104:112]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[112:120]), binary.LittleEndian.Uint64(prevChunk[120:128]))
 
 		// Tour 4 : Poly blocks 8 & 9
 		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
 		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+128:prevOff+136]), binary.LittleEndian.Uint64(cipher_text[prevOff+136:prevOff+144]))
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+144:prevOff+152]), binary.LittleEndian.Uint64(cipher_text[prevOff+152:prevOff+160]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[128:136]), binary.LittleEndian.Uint64(prevChunk[136:144]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[144:152]), binary.LittleEndian.Uint64(prevChunk[152:160]))
 
 		// Tour 5 : Poly blocks 10 & 11
 		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
 		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+160:prevOff+168]), binary.LittleEndian.Uint64(cipher_text[prevOff+168:prevOff+176]))
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+176:prevOff+184]), binary.LittleEndian.Uint64(cipher_text[prevOff+184:prevOff+192]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[160:168]), binary.LittleEndian.Uint64(prevChunk[168:176]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[176:184]), binary.LittleEndian.Uint64(prevChunk[184:192]))
 
 		// Tour 6 : Poly blocks 12 & 13
 		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
 		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+192:prevOff+200]), binary.LittleEndian.Uint64(cipher_text[prevOff+200:prevOff+208]))
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+208:prevOff+216]), binary.LittleEndian.Uint64(cipher_text[prevOff+216:prevOff+224]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[192:200]), binary.LittleEndian.Uint64(prevChunk[200:208]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[208:216]), binary.LittleEndian.Uint64(prevChunk[216:224]))
 
 		// Tour 7 : Poly blocks 14 & 15
 		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
 		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+224:prevOff+232]), binary.LittleEndian.Uint64(cipher_text[prevOff+232:prevOff+240]))
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+240:prevOff+248]), binary.LittleEndian.Uint64(cipher_text[prevOff+248:prevOff+256]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[224:232]), binary.LittleEndian.Uint64(prevChunk[232:240]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(prevChunk[240:248]), binary.LittleEndian.Uint64(prevChunk[248:256]))
 
 		// Tour 8 & 9 : Finalisation tours ChaCha20
 		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
@@ -421,28 +428,28 @@ func aead_interleaved_write_simd(ctx *Crypto_aead_ctx, polyCtx *Crypto_poly1305_
 
 		// Store Chunk c
 		k0_0, k0_1, k0_2, k0_3 := v0_A.GetLo().AsUint8x16(), v1_A.GetLo().AsUint8x16(), v2_A.GetLo().AsUint8x16(), v3_A.GetLo().AsUint8x16()
-		archsimd.LoadUint8x16(plain_text[currOff:currOff+16]).Xor(k0_0).Store(cipher_text[currOff:currOff+16])
-		archsimd.LoadUint8x16(plain_text[currOff+16:currOff+32]).Xor(k0_1).Store(cipher_text[currOff+16:currOff+32])
-		archsimd.LoadUint8x16(plain_text[currOff+32:currOff+48]).Xor(k0_2).Store(cipher_text[currOff+32:currOff+48])
-		archsimd.LoadUint8x16(plain_text[currOff+48:currOff+64]).Xor(k0_3).Store(cipher_text[currOff+48:currOff+64])
+		archsimd.LoadUint8x16(currPT[0:16]).Xor(k0_0).Store(currCT[0:16])
+		archsimd.LoadUint8x16(currPT[16:32]).Xor(k0_1).Store(currCT[16:32])
+		archsimd.LoadUint8x16(currPT[32:48]).Xor(k0_2).Store(currCT[32:48])
+		archsimd.LoadUint8x16(currPT[48:64]).Xor(k0_3).Store(currCT[48:64])
 
 		k1_0, k1_1, k1_2, k1_3 := v0_A.GetHi().AsUint8x16(), v1_A.GetHi().AsUint8x16(), v2_A.GetHi().AsUint8x16(), v3_A.GetHi().AsUint8x16()
-		archsimd.LoadUint8x16(plain_text[currOff+64:currOff+80]).Xor(k1_0).Store(cipher_text[currOff+64:currOff+80])
-		archsimd.LoadUint8x16(plain_text[currOff+80:currOff+96]).Xor(k1_1).Store(cipher_text[currOff+80:currOff+96])
-		archsimd.LoadUint8x16(plain_text[currOff+96:currOff+112]).Xor(k1_2).Store(cipher_text[currOff+96:currOff+112])
-		archsimd.LoadUint8x16(plain_text[currOff+112:currOff+128]).Xor(k1_3).Store(cipher_text[currOff+112:currOff+128])
+		archsimd.LoadUint8x16(currPT[64:80]).Xor(k1_0).Store(currCT[64:80])
+		archsimd.LoadUint8x16(currPT[80:96]).Xor(k1_1).Store(currCT[80:96])
+		archsimd.LoadUint8x16(currPT[96:112]).Xor(k1_2).Store(currCT[96:112])
+		archsimd.LoadUint8x16(currPT[112:128]).Xor(k1_3).Store(currCT[112:128])
 
 		k2_0, k2_1, k2_2, k2_3 := v0_B.GetLo().AsUint8x16(), v1_B.GetLo().AsUint8x16(), v2_B.GetLo().AsUint8x16(), v3_B.GetLo().AsUint8x16()
-		archsimd.LoadUint8x16(plain_text[currOff+128:currOff+144]).Xor(k2_0).Store(cipher_text[currOff+128:currOff+144])
-		archsimd.LoadUint8x16(plain_text[currOff+144:currOff+160]).Xor(k2_1).Store(cipher_text[currOff+144:currOff+160])
-		archsimd.LoadUint8x16(plain_text[currOff+160:currOff+176]).Xor(k2_2).Store(cipher_text[currOff+160:currOff+176])
-		archsimd.LoadUint8x16(plain_text[currOff+176:currOff+192]).Xor(k2_3).Store(cipher_text[currOff+176:currOff+192])
+		archsimd.LoadUint8x16(currPT[128:144]).Xor(k2_0).Store(currCT[128:144])
+		archsimd.LoadUint8x16(currPT[144:160]).Xor(k2_1).Store(currCT[144:160])
+		archsimd.LoadUint8x16(currPT[160:176]).Xor(k2_2).Store(currCT[160:176])
+		archsimd.LoadUint8x16(currPT[176:192]).Xor(k2_3).Store(currCT[176:192])
 
 		k3_0, k3_1, k3_2, k3_3 := v0_B.GetHi().AsUint8x16(), v1_B.GetHi().AsUint8x16(), v2_B.GetHi().AsUint8x16(), v3_B.GetHi().AsUint8x16()
-		archsimd.LoadUint8x16(plain_text[currOff+192:currOff+208]).Xor(k3_0).Store(cipher_text[currOff+192:currOff+208])
-		archsimd.LoadUint8x16(plain_text[currOff+208:currOff+224]).Xor(k3_1).Store(cipher_text[currOff+208:currOff+224])
-		archsimd.LoadUint8x16(plain_text[currOff+224:currOff+240]).Xor(k3_2).Store(cipher_text[currOff+224:currOff+240])
-		archsimd.LoadUint8x16(plain_text[currOff+240:currOff+256]).Xor(k3_3).Store(cipher_text[currOff+240:currOff+256])
+		archsimd.LoadUint8x16(currPT[192:208]).Xor(k3_0).Store(currCT[192:208])
+		archsimd.LoadUint8x16(currPT[208:224]).Xor(k3_1).Store(currCT[208:224])
+		archsimd.LoadUint8x16(currPT[224:240]).Xor(k3_2).Store(currCT[224:240])
+		archsimd.LoadUint8x16(currPT[240:256]).Xor(k3_3).Store(currCT[240:256])
 
 		currCtr += 4
 		st3_A = st3_A.Add(ctrInc4)
@@ -454,9 +461,10 @@ func aead_interleaved_write_simd(ctx *Crypto_aead_ctx, polyCtx *Crypto_poly1305_
 
 	// Absorption du dernier chunk (Chunk numChunks-1) dans Poly1305
 	lastOff := int((numChunks - 1) * 256)
+	lastChunk := (*[256]byte)(cipher_text[lastOff : lastOff+256])
 	for b := 0; b < 16; b++ {
-		bOff := lastOff + b*16
-		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[bOff:bOff+8]), binary.LittleEndian.Uint64(cipher_text[bOff+8:bOff+16]))
+		bOff := b * 16
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(lastChunk[bOff:bOff+8]), binary.LittleEndian.Uint64(lastChunk[bOff+8:bOff+16]))
 	}
 
 	polyCtx.H[0] = uint32(h0)
