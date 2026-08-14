@@ -1,9 +1,6 @@
-/bin/
-/dist/
 *.test
+*.pprof
 *.out
-coverage.*
-.idea/
-.vscode/
-*.swp
-.DS_Store
+bin/
+testdata/libsodium_interop/bin/
+*.test

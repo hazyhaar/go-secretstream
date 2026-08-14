@@ -1,4 +1,4 @@
-package secretstream_test
+package secretstream55_test
 
 import (
 	"bytes"
@@ -17,14 +17,14 @@ func TestSecretStreamRoundtrip(t *testing.T) {
 	payload := []byte("Highly confidential data stream encrypted using SIMD-accelerated XChaCha20-Poly1305 in Pure Go (CGO_ENABLED=0).")
 
 	var encryptedBuf bytes.Buffer
-	enc, err := secretstream.NewEncryptor(&encryptedBuf, key)
+	enc, err := secretstream55.NewEncryptor(&encryptedBuf, key)
 	if err != nil {
 		t.Fatalf("NewEncryptor failed: %v", err)
 	}
 	if _, err := enc.Write(payload); err != nil {
 		t.Fatalf("enc.Write failed: %v", err)
 	}
-	dec, err := secretstream.NewDecryptor(&encryptedBuf, key)
+	dec, err := secretstream55.NewDecryptor(&encryptedBuf, key)
 	if err != nil {
 		t.Fatalf("NewDecryptor failed: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestSecretStream_UniqueKeystreamPerChunk(t *testing.T) {
 	identicalChunk := bytes.Repeat([]byte("A"), 64*1024)
 
 	var buf bytes.Buffer
-	enc, err := secretstream.NewEncryptor(&buf, key)
+	enc, err := secretstream55.NewEncryptor(&buf, key)
 	if err != nil {
 		t.Fatalf("NewEncryptor failed: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestLibsodiumFramingRoundtrip(t *testing.T) {
 	payload := []byte("WAL-G archival stream encrypted with Libsodium crypto_secretstream C framing support in Pure Go.")
 
 	var encryptedBuf bytes.Buffer
-	enc, err := secretstream.NewLibsodiumEncryptor(&encryptedBuf, key)
+	enc, err := secretstream55.NewLibsodiumEncryptor(&encryptedBuf, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestLibsodiumFramingRoundtrip(t *testing.T) {
 	if err := enc.Close(); err != nil {
 		t.Fatal(err)
 	}
-	dec, err := secretstream.NewLibsodiumDecryptor(bytes.NewReader(encryptedBuf.Bytes()), key)
+	dec, err := secretstream55.NewLibsodiumDecryptor(bytes.NewReader(encryptedBuf.Bytes()), key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestLibsodiumMultiChunkSizes(t *testing.T) {
 				plain[i] = byte(i % 251)
 			}
 			var buf bytes.Buffer
-			w, err := secretstream.NewLibsodiumEncryptor(&buf, key)
+			w, err := secretstream55.NewLibsodiumEncryptor(&buf, key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -112,7 +112,7 @@ func TestLibsodiumMultiChunkSizes(t *testing.T) {
 			if err := w.Close(); err != nil {
 				t.Fatal(err)
 			}
-			r, err := secretstream.NewLibsodiumDecryptor(bytes.NewReader(buf.Bytes()), key)
+			r, err := secretstream55.NewLibsodiumDecryptor(bytes.NewReader(buf.Bytes()), key)
 			if err != nil {
 				t.Fatal(err)
 			}

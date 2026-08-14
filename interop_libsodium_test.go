@@ -1,4 +1,4 @@
-package secretstream_test
+package secretstream55_test
 
 import (
 	"bytes"
@@ -89,7 +89,7 @@ func TestInterop_Golden_CWire_GoDecrypt(t *testing.T) {
 			if sha256File(t, filepath.Join(g, e.ID+".plain")) != e.SHA256Plain {
 				t.Fatal("plain sha mismatch manifest")
 			}
-			r, err := secretstream.NewLibsodiumDecryptor(bytes.NewReader(wire), key)
+			r, err := secretstream55.NewLibsodiumDecryptor(bytes.NewReader(wire), key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -118,7 +118,7 @@ func TestInterop_GoEncrypt_CDecrypt(t *testing.T) {
 				plain[i] = byte((i * 3) % 251)
 			}
 			var wireBuf bytes.Buffer
-			w, err := secretstream.NewLibsodiumEncryptor(&wireBuf, key)
+			w, err := secretstream55.NewLibsodiumEncryptor(&wireBuf, key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -170,7 +170,7 @@ func TestInterop_CEncrypt_GoDecrypt(t *testing.T) {
 		t.Fatalf("c push: %v\n%s", err, out)
 	}
 	wire, _ := os.ReadFile(wiref)
-	r, err := secretstream.NewLibsodiumDecryptor(bytes.NewReader(wire), key)
+	r, err := secretstream55.NewLibsodiumDecryptor(bytes.NewReader(wire), key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestInterop_CEncrypt_GoDecrypt(t *testing.T) {
 func TestInterop_MACTamper_FailClosed(t *testing.T) {
 	key := bytes.Repeat([]byte{1}, 32)
 	var buf bytes.Buffer
-	w, _ := secretstream.NewLibsodiumEncryptor(&buf, key)
+	w, _ := secretstream55.NewLibsodiumEncryptor(&buf, key)
 	_, _ = w.Write([]byte("tamper-me"))
 	_ = w.Close()
 	wire := buf.Bytes()
@@ -196,7 +196,7 @@ func TestInterop_MACTamper_FailClosed(t *testing.T) {
 	}
 	// flip last byte (inside MAC of final chunk)
 	wire[len(wire)-1] ^= 0xff
-	r, err := secretstream.NewLibsodiumDecryptor(bytes.NewReader(wire), key)
+	r, err := secretstream55.NewLibsodiumDecryptor(bytes.NewReader(wire), key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestInterop_GoEncrypt_GoDecrypt_Large(t *testing.T) {
 		plain[i] = byte(i % 251)
 	}
 	var buf bytes.Buffer
-	w, err := secretstream.NewLibsodiumEncryptor(&buf, key)
+	w, err := secretstream55.NewLibsodiumEncryptor(&buf, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestInterop_GoEncrypt_GoDecrypt_Large(t *testing.T) {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	r, err := secretstream.NewLibsodiumDecryptor(bytes.NewReader(buf.Bytes()), key)
+	r, err := secretstream55.NewLibsodiumDecryptor(bytes.NewReader(buf.Bytes()), key)
 	if err != nil {
 		t.Fatal(err)
 	}

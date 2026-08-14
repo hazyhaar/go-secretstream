@@ -1,9 +1,11 @@
-// Package secretstream provides streaming AEAD encryption in Pure Go.
+// Package secretstream55 provides streaming AEAD encryption in Pure Go.
 //
 // Two wire modes:
-//   - Standard (NewEncryptor / NewDecryptor): high-throughput maison framing (BE4 length + XChaCha20-Poly1305 AEAD via SIMD monocypher).
-//   - Libsodium (NewLibsodiumEncryptor / NewLibsodiumDecryptor): crypto_secretstream_xchacha20poly1305 wire (Libsodium & wal-g compatible).
-package secretstream
+//   - Standard (NewEncryptor): maison framing (BE4 length + XChaCha20-Poly1305 AEAD via engine).
+//   - Libsodium (NewLibsodiumEncryptor): crypto_secretstream_xchacha20poly1305 wire (wal-g compatible).
+//
+// AEAD backend for standard mode: c2simd (default) or monocypher_sgoiter (-tags aead_sgoiter).
+package secretstream55
 
 import (
 	"crypto/rand"
@@ -26,7 +28,7 @@ const (
 	TagFinal   byte = 0x03
 )
 
-// Encryptor — standard (maison) framing + SIMD AEAD engine.
+// Encryptor — standard (maison) framing + engine AEAD.
 type Encryptor struct {
 	w              io.Writer
 	key            [32]byte
@@ -38,14 +40,14 @@ type Encryptor struct {
 	eng            engine.AEAD
 }
 
-// NewEncryptor creates a standard-mode encryptor (maison wire + SIMD AEAD).
+// NewEncryptor creates a standard-mode encryptor (maison wire + engine AEAD).
 func NewEncryptor(w io.Writer, key []byte) (*Encryptor, error) {
 	return newEncryptor(w, key, engine.Default())
 }
 
 func newEncryptor(w io.Writer, key []byte, eng engine.AEAD) (*Encryptor, error) {
 	if len(key) != 32 {
-		return nil, fmt.Errorf("secretstream: key must be 32 bytes")
+		return nil, fmt.Errorf("secretstream55: key must be 32 bytes")
 	}
 	var enc Encryptor
 	copy(enc.key[:], key)
@@ -54,10 +56,10 @@ func newEncryptor(w io.Writer, key []byte, eng engine.AEAD) (*Encryptor, error) 
 	enc.wireBuf = make([]byte, 4+ChunkSize+1+TagSize+64)
 	enc.scratchPayload = make([]byte, ChunkSize+64)
 	if _, err := rand.Read(enc.nonce[:]); err != nil {
-		return nil, fmt.Errorf("secretstream: failed to generate nonce: %w", err)
+		return nil, fmt.Errorf("secretstream55: failed to generate nonce: %w", err)
 	}
 	if _, err := w.Write(enc.nonce[:]); err != nil {
-		return nil, fmt.Errorf("secretstream: failed to write header nonce: %w", err)
+		return nil, fmt.Errorf("secretstream55: failed to write header nonce: %w", err)
 	}
 	return &enc, nil
 }
@@ -84,7 +86,7 @@ func (e *Encryptor) Write(p []byte) (int, error) {
 		var mac [16]byte
 		dstCipher := e.wireBuf[4 : 4+len(payload)]
 		if err := e.eng.LockDst(dstCipher, &mac, e.key[:], chunkNonce[:], e.adBuf[:], payload); err != nil {
-			return totalWritten, fmt.Errorf("secretstream: AEAD lock failed: %w", err)
+			return totalWritten, fmt.Errorf("secretstream55: AEAD lock failed: %w", err)
 		}
 		macOffset := 4 + len(payload)
 		copy(e.wireBuf[macOffset:macOffset+16], mac[:])
@@ -120,7 +122,7 @@ func NewDecryptor(r io.Reader, key []byte) (*Decryptor, error) {
 
 func newDecryptor(r io.Reader, key []byte, eng engine.AEAD) (*Decryptor, error) {
 	if len(key) != 32 {
-		return nil, fmt.Errorf("secretstream: key must be 32 bytes")
+		return nil, fmt.Errorf("secretstream55: key must be 32 bytes")
 	}
 	var dec Decryptor
 	copy(dec.key[:], key)
@@ -129,7 +131,7 @@ func newDecryptor(r io.Reader, key []byte, eng engine.AEAD) (*Decryptor, error) 
 	dec.inBuf = make([]byte, ChunkSize+TagSize+64)
 	dec.plainBuf = make([]byte, ChunkSize+TagSize+64)
 	if _, err := io.ReadFull(r, dec.nonce[:]); err != nil {
-		return nil, fmt.Errorf("secretstream: failed to read header nonce: %w", err)
+		return nil, fmt.Errorf("secretstream55: failed to read header nonce: %w", err)
 	}
 	return &dec, nil
 }
@@ -146,7 +148,7 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 	}
 	chunkLen := binary.BigEndian.Uint32(d.lenBuf[:])
 	if chunkLen < 16 {
-		return 0, fmt.Errorf("secretstream: payload length too short")
+		return 0, fmt.Errorf("secretstream55: payload length too short")
 	}
 	totalPayloadLen := int(chunkLen)
 	if cap(d.inBuf) < totalPayloadLen {
@@ -154,7 +156,7 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 	}
 	payloadBuf := d.inBuf[:totalPayloadLen]
 	if _, err := io.ReadFull(d.r, payloadBuf); err != nil {
-		return 0, fmt.Errorf("secretstream: read payload failed: %w", err)
+		return 0, fmt.Errorf("secretstream55: read payload failed: %w", err)
 	}
 	cipherLen := totalPayloadLen - 16
 	cipherText := payloadBuf[:cipherLen]
@@ -173,7 +175,7 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 	plainDst := d.plainBuf[:cipherLen]
 	unlocked, err := d.eng.UnlockDst(plainDst, d.key[:], chunkNonce[:], d.adBuf[:], cipherText, mac)
 	if err != nil {
-		return 0, fmt.Errorf("secretstream: AEAD unlock failed: %w", err)
+		return 0, fmt.Errorf("secretstream55: AEAD unlock failed: %w", err)
 	}
 	n := copy(p, unlocked)
 	if n < len(unlocked) {
@@ -188,7 +190,7 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 // Caller must Close() to emit TAG_FINAL.
 func NewLibsodiumEncryptor(w io.Writer, key []byte) (io.WriteCloser, error) {
 	if len(key) != 32 {
-		return nil, fmt.Errorf("secretstream: key must be 32 bytes")
+		return nil, fmt.Errorf("secretstream55: key must be 32 bytes")
 	}
 	return lsstream.NewWriter(w, key), nil
 }
@@ -196,7 +198,7 @@ func NewLibsodiumEncryptor(w io.Writer, key []byte) (io.WriteCloser, error) {
 // NewLibsodiumDecryptor returns a Reader for true libsodium secretstream wire.
 func NewLibsodiumDecryptor(r io.Reader, key []byte) (io.Reader, error) {
 	if len(key) != 32 {
-		return nil, fmt.Errorf("secretstream: key must be 32 bytes")
+		return nil, fmt.Errorf("secretstream55: key must be 32 bytes")
 	}
 	return lsstream.NewReader(r, key), nil
 }

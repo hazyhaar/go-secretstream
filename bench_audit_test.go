@@ -1,4 +1,4 @@
-package secretstream_test
+package secretstream55_test
 
 import (
 	"crypto/rand"
@@ -22,24 +22,21 @@ func generateTestData(size int) ([]byte, []byte, []byte, []byte) {
 }
 
 // -----------------------------------------------------------------------------
-// 1. Benchmark Monocypher Pure Go SIMD (AVX2 / 0 Alloc)
+// 1. Benchmark Monocypher Transpiled (C via ccgo v4 / Pure Go)
 // -----------------------------------------------------------------------------
 
 func BenchmarkMonocypher_64KB(b *testing.B) {
 	key, nonce, ad, payload := generateTestData(64 * 1024)
-	dstCT := make([]byte, len(payload))
-	mac := make([]byte, 16)
-	dstPT := make([]byte, len(payload))
-
 	b.SetBytes(int64(len(payload)))
-	b.ReportAllocs()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if err := monocypher.LockDst(dstCT, mac, key, nonce, ad, payload); err != nil {
+		cipherText, mac, err := monocypher.AEADLock(key, nonce, ad, payload)
+		if err != nil {
 			b.Fatal(err)
 		}
-		if err := monocypher.UnlockDst(dstPT, key, nonce, mac, ad, dstCT); err != nil {
+		_, err = monocypher.AEADUnlock(key, nonce, mac, ad, cipherText)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -47,19 +44,33 @@ func BenchmarkMonocypher_64KB(b *testing.B) {
 
 func BenchmarkMonocypher_1MB(b *testing.B) {
 	key, nonce, ad, payload := generateTestData(1024 * 1024)
-	dstCT := make([]byte, len(payload))
-	mac := make([]byte, 16)
-	dstPT := make([]byte, len(payload))
-
 	b.SetBytes(int64(len(payload)))
-	b.ReportAllocs()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if err := monocypher.LockDst(dstCT, mac, key, nonce, ad, payload); err != nil {
+		cipherText, mac, err := monocypher.AEADLock(key, nonce, ad, payload)
+		if err != nil {
 			b.Fatal(err)
 		}
-		if err := monocypher.UnlockDst(dstPT, key, nonce, mac, ad, dstCT); err != nil {
+		_, err = monocypher.AEADUnlock(key, nonce, mac, ad, cipherText)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkMonocypher_10MB(b *testing.B) {
+	key, nonce, ad, payload := generateTestData(10 * 1024 * 1024)
+	b.SetBytes(int64(len(payload)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		cipherText, mac, err := monocypher.AEADLock(key, nonce, ad, payload)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, err = monocypher.AEADUnlock(key, nonce, mac, ad, cipherText)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -75,15 +86,13 @@ func BenchmarkNativeGo_64KB(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	dst := make([]byte, 0, len(payload)+16)
 
 	b.SetBytes(int64(len(payload)))
-	b.ReportAllocs()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		cipherText := aead.Seal(dst[:0], nonce, payload, ad)
-		_, err := aead.Open(dst[:0], nonce, cipherText, ad)
+		cipherText := aead.Seal(nil, nonce, payload, ad)
+		_, err := aead.Open(nil, nonce, cipherText, ad)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -96,15 +105,32 @@ func BenchmarkNativeGo_1MB(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	dst := make([]byte, 0, len(payload)+16)
 
 	b.SetBytes(int64(len(payload)))
-	b.ReportAllocs()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		cipherText := aead.Seal(dst[:0], nonce, payload, ad)
-		_, err := aead.Open(dst[:0], nonce, cipherText, ad)
+		cipherText := aead.Seal(nil, nonce, payload, ad)
+		_, err := aead.Open(nil, nonce, cipherText, ad)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkNativeGo_10MB(b *testing.B) {
+	key, nonce, ad, payload := generateTestData(10 * 1024 * 1024)
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.SetBytes(int64(len(payload)))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		cipherText := aead.Seal(nil, nonce, payload, ad)
+		_, err := aead.Open(nil, nonce, cipherText, ad)
 		if err != nil {
 			b.Fatal(err)
 		}

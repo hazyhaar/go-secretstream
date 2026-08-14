@@ -3,7 +3,6 @@ package monocypher_test
 import (
 	"bytes"
 	"crypto/sha256"
-	"fmt"
 	"testing"
 
 	sgoi "github.com/hazyhaar/go-secretstream/internal/monocypher"
@@ -19,7 +18,7 @@ func BenchmarkStratum_AEAD_Lock_64(b *testing.B) {
 	b.SetBytes(64)
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _, _ = sgoi.AEADLock(key, nonce, ad, pt)
 	}
 }
@@ -31,7 +30,7 @@ func BenchmarkStratum_AEAD_Lock_1K(b *testing.B) {
 	b.SetBytes(1024)
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _, _ = sgoi.AEADLock(key, nonce, ad, pt)
 	}
 }
@@ -42,7 +41,7 @@ func BenchmarkStratum_AEAD_Lock_64K(b *testing.B) {
 	b.SetBytes(64 * 1024)
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _, _ = sgoi.AEADLock(key, nonce, nil, pt)
 	}
 }
@@ -56,7 +55,7 @@ func BenchmarkStratum_AEAD_LockDst_64(b *testing.B) {
 	b.SetBytes(64)
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := sgoi.LockDst(dst, mac[:], key, nonce, ad, pt); err != nil {
 			b.Fatal(err)
 		}
@@ -72,7 +71,7 @@ func BenchmarkStratum_AEAD_LockDst_1K(b *testing.B) {
 	b.SetBytes(1024)
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := sgoi.LockDst(dst, mac[:], key, nonce, ad, pt); err != nil {
 			b.Fatal(err)
 		}
@@ -87,7 +86,7 @@ func BenchmarkStratum_AEAD_LockDst_64K(b *testing.B) {
 	b.SetBytes(64 * 1024)
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := sgoi.LockDst(dst, mac[:], key, nonce, nil, pt); err != nil {
 			b.Fatal(err)
 		}
@@ -100,7 +99,7 @@ func BenchmarkStratum_Blake2b_1K(b *testing.B) {
 	b.SetBytes(1024)
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		sgoi.Crypto_blake2b(h[:], 64, msg, uint64(len(msg)))
 	}
 }
@@ -111,7 +110,7 @@ func BenchmarkStratum_X25519_DH(b *testing.B) {
 	sgoi.Crypto_x25519_public_key(pk[:], sk)
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		sgoi.Crypto_x25519(out[:], sk, pk[:])
 	}
 }
@@ -126,7 +125,7 @@ func BenchmarkStratum_EdDSA_Sign_64(b *testing.B) {
 	b.SetBytes(64)
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		sgoi.Crypto_eddsa_sign(sig[:], sk[:], msg, uint64(len(msg)))
 	}
 }
@@ -142,7 +141,7 @@ func BenchmarkStratum_EdDSA_Verify_64(b *testing.B) {
 	b.SetBytes(64)
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if sgoi.Crypto_eddsa_check(sig[:], pk[:], msg, uint64(len(msg))) != 0 {
 			b.Fatal("verify")
 		}
@@ -157,7 +156,7 @@ func BenchmarkStratum_EdDSA_Scalarbase(b *testing.B) {
 	var pt [32]byte
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		sgoi.Crypto_eddsa_scalarbase(pt[:], sc[:])
 	}
 }
@@ -170,7 +169,7 @@ func BenchmarkStratum_Argon2i_m8_p1(b *testing.B) {
 	in := sgoi.Crypto_argon2_inputs{Pass: []byte("password"), Salt: bytes.Repeat([]byte{1}, 16), Pass_size: 8, Salt_size: 16}
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		sgoi.Crypto_argon2(hash, 32, work, cfg, in, sgoi.Crypto_argon2_no_extras)
 	}
 }
@@ -179,8 +178,8 @@ func BenchmarkStratum_Elligator_KeyPair(b *testing.B) {
 	var hidden, sk [32]byte
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		seed := sha256.Sum256([]byte(fmt.Sprintf("e-%d", i)))
+	for b.Loop() {
+		seed := sha256.Sum256([]byte("seed-stratum"))
 		sgoi.Crypto_elligator_key_pair(hidden[:], sk[:], seed[:])
 	}
 }
@@ -190,7 +189,7 @@ func BenchmarkStratum_Elligator_Map(b *testing.B) {
 	var curve [32]byte
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		sgoi.Crypto_elligator_map(curve[:], h[:])
 	}
 }

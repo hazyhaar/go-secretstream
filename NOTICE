@@ -1,21 +1,3 @@
-go-secretstream — pure-Go libsodium crypto_secretstream_xchacha20poly1305
-
-Wire-compatible with libsodium C (secretstream_xchacha20poly1305) and with
-the framing used by WAL-G (8192-byte plaintext chunks, TAG_FINAL on last flush).
-
-Derived work
-------------
-Reader/writer/crypter/key-transform surfaces were adapted from the WAL-G
-libsodium crypter (Apache License 2.0), originally CGO-bound to libsodium.
-
-  Upstream project: https://github.com/wal-g/wal-g
-  Original copyright: Copyright 2017 Citus Data Inc. (and contributors)
-  Apache-2.0 text: LICENSE
-
-Pure-Go secretstream core (ChaCha20-IETF + Poly1305 matching libsodium C)
-and packaging of this standalone module:
-
-  Copyright (c) 2026 Lateos
-  MIT text: LICENSE-MIT
-
-This repository does not vendor libsodium C and does not use CGO.
+internal/lsstream — Pure-Go crypto_secretstream_xchacha20poly1305
+Ported from the lateos-ai/wal-g fork of wal-g/wal-g (Apache License 2.0).
+Algorithm bit-compatible with libsodium secretstream_xchacha20poly1305.c.

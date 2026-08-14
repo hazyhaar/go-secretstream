@@ -1,6 +1,6 @@
 //go:build goexperiment.simd
 
-package secretstream_test
+package secretstream55_test
 
 import (
 	"bytes"
@@ -8,8 +8,8 @@ import (
 	"io"
 	"testing"
 
+	"code.hazyhaar.fr/devhoros/c2simd"
 	"github.com/hazyhaar/go-secretstream"
-	"github.com/hazyhaar/go-secretstream/internal/monocypher"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -22,7 +22,7 @@ func BenchmarkSecretStream55_SteadyState_WriteOnly_1MB(b *testing.B) {
 
 	outBuf := make([]byte, 1024*1024+4096)
 	buf := bytes.NewBuffer(outBuf[:0])
-	enc, err := secretstream.NewEncryptor(buf, key)
+	enc, err := secretstream55.NewEncryptor(buf, key)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func BenchmarkSecretStream55_SteadyState_ReadOnly_1MB(b *testing.B) {
 	rand.Read(payload)
 
 	var encBuf bytes.Buffer
-	enc, err := secretstream.NewEncryptor(&encBuf, key)
+	enc, err := secretstream55.NewEncryptor(&encBuf, key)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func BenchmarkSecretStream55_SteadyState_ReadOnly_1MB(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		r := bytes.NewReader(encryptedBytes)
-		dec, err := secretstream.NewDecryptor(r, key)
+		dec, err := secretstream55.NewDecryptor(r, key)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -87,7 +87,7 @@ func BenchmarkSecretStream55_FullDuplex_1MB(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		buf := bytes.NewBuffer(outBuf[:0])
-		enc, err := secretstream.NewEncryptor(buf, key)
+		enc, err := secretstream55.NewEncryptor(buf, key)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -96,7 +96,7 @@ func BenchmarkSecretStream55_FullDuplex_1MB(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		dec, err := secretstream.NewDecryptor(buf, key)
+		dec, err := secretstream55.NewDecryptor(buf, key)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -107,7 +107,7 @@ func BenchmarkSecretStream55_FullDuplex_1MB(b *testing.B) {
 	}
 }
 
-func BenchmarkSIMD_Engine_1MB(b *testing.B) {
+func BenchmarkC2SIMD_Engine_1MB(b *testing.B) {
 	key := make([]byte, 32)
 	nonce := make([]byte, 24)
 	ad := []byte("ad_header")
@@ -123,7 +123,8 @@ func BenchmarkSIMD_Engine_1MB(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if err := monocypher.LockDst(dstBuf, mac[:], key, nonce, ad, payload); err != nil {
+		_, err := c2simd.AEADLockDst(dstBuf, &mac, key, nonce, ad, payload)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
