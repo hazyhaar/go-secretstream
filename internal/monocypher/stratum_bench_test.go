@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"testing"
+	"unsafe"
 
 	sgoi "github.com/hazyhaar/go-secretstream/internal/monocypher"
 )
@@ -163,7 +164,8 @@ func BenchmarkStratum_EdDSA_Scalarbase(b *testing.B) {
 
 func BenchmarkStratum_Argon2i_m8_p1(b *testing.B) {
 	const blocks = 8
-	work := make([]byte, blocks*1024)
+	workArea := make([]uint64, blocks*128)
+	work := unsafe.Slice((*byte)(unsafe.Pointer(&workArea[0])), blocks*1024)
 	hash := make([]byte, 32)
 	cfg := sgoi.Crypto_argon2_config{Algorithm: sgoi.Crypto_argon2_i, Nb_blocks: blocks, Nb_passes: 1, Nb_lanes: 1}
 	in := sgoi.Crypto_argon2_inputs{Pass: []byte("password"), Salt: bytes.Repeat([]byte{1}, 16), Pass_size: 8, Salt_size: 16}
