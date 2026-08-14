@@ -25,10 +25,21 @@ func Crypto_aead_write(ctx *Crypto_aead_ctx, cipher_text []byte, mac []byte, ad 
 
 	currCtr := ctx.Counter + 1
 
-	// 4. Chiffrement vectorisé ChaCha20 puis absorption Poly1305
-	if text_size > 0 {
-		currCtr = Crypto_chacha20_djb(cipher_text, plain_text, text_size, ctx.Key[:], ctx.Nonce[:], currCtr)
-		Crypto_poly1305_update(&polyCtx, cipher_text, text_size)
+	offset := uint64(0)
+
+	// 4. Boucle micro-entrelacée instruction-par-instruction (ChaCha20 + Poly1305 simultanés)
+	if hasAVX2() && text_size >= 256 {
+		numChunks := text_size / 256
+		currCtr = aead_interleaved_write_simd(ctx, &polyCtx, cipher_text, plain_text, numChunks, currCtr)
+		offset += numChunks * 256
+	}
+
+	// 5. Traitement du reliquat de payload (< 256 octets)
+	remaining := text_size - offset
+	if remaining > 0 {
+		cOff := int(offset)
+		currCtr = Crypto_chacha20_djb(cipher_text[cOff:], plain_text[cOff:], remaining, ctx.Key[:], ctx.Nonce[:], currCtr)
+		Crypto_poly1305_update(&polyCtx, cipher_text[cOff:], remaining)
 	}
 
 	// 6. Alignement du ciphertext sur 16 octets

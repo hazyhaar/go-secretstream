@@ -74,20 +74,6 @@ func chacha20DoubleBlockSIMD256(v0, v1, v2, v3 archsimd.Uint32x8) (archsimd.Uint
 	return v0, v1, v2, v3
 }
 
-// reloadSt3 initialise et recharge les vecteurs d'état st3_A et st3_B pour 4 blocs ChaCha20
-// avec propagation exacte du compteur 64 bits (lanes 0..3).
-func reloadSt3(currCtr uint64, n0, n1 uint32) (archsimd.Uint32x8, archsimd.Uint32x8) {
-	st3_A := archsimd.LoadUint32x8Array(&[8]uint32{
-		uint32(currCtr), uint32(currCtr >> 32), n0, n1,
-		uint32(currCtr + 1), uint32((currCtr + 1) >> 32), n0, n1,
-	})
-	st3_B := archsimd.LoadUint32x8Array(&[8]uint32{
-		uint32(currCtr + 2), uint32((currCtr + 2) >> 32), n0, n1,
-		uint32(currCtr + 3), uint32((currCtr + 3) >> 32), n0, n1,
-	})
-	return st3_A, st3_B
-}
-
 // chacha20_djb_simd_4x traite 4 blocs de 64 octets (256 octets) simultanément en SIMD 256 bits (AVX2 archsimd.Uint32x8).
 func chacha20_djb_simd_4x(cipher_text, plain_text []byte, key, nonce []byte, ctr uint64, numBlocks uint64) uint64 {
 	k0 := binary.LittleEndian.Uint32(key[0:4])
@@ -107,7 +93,19 @@ func chacha20_djb_simd_4x(cipher_text, plain_text []byte, key, nonce []byte, ctr
 	st2 := archsimd.LoadUint32x8Array(&[8]uint32{k4, k5, k6, k7, k4, k5, k6, k7})
 
 	currCtr := ctr
-	st3_A, st3_B := reloadSt3(currCtr, n0, n1)
+	ctr0_lo, ctr0_hi := uint32(currCtr), uint32(currCtr>>32)
+	ctr1_lo, ctr1_hi := uint32(currCtr+1), uint32((currCtr+1)>>32)
+	ctr2_lo, ctr2_hi := uint32(currCtr+2), uint32((currCtr+2)>>32)
+	ctr3_lo, ctr3_hi := uint32(currCtr+3), uint32((currCtr+3)>>32)
+
+	st3_A := archsimd.LoadUint32x8Array(&[8]uint32{
+		ctr0_lo, ctr0_hi, n0, n1,
+		ctr1_lo, ctr1_hi, n0, n1,
+	})
+	st3_B := archsimd.LoadUint32x8Array(&[8]uint32{
+		ctr2_lo, ctr2_hi, n0, n1,
+		ctr3_lo, ctr3_hi, n0, n1,
+	})
 
 	offset := 0
 
@@ -209,7 +207,15 @@ func chacha20_djb_simd_4x(cipher_text, plain_text []byte, key, nonce []byte, ctr
 		st3_A = st3_A.Add(ctrInc4)
 		st3_B = st3_B.Add(ctrInc4)
 		if lo := uint32(currCtr); lo < 4 || lo > 0xFFFFFFFC {
-			st3_A, st3_B = reloadSt3(currCtr, n0, n1)
+			// Franchissement de 2^32 : rechargement de st3 avec propagation de retenue 64 bits
+			st3_A = archsimd.LoadUint32x8Array(&[8]uint32{
+				uint32(currCtr), uint32(currCtr >> 32), n0, n1,
+				uint32(currCtr + 1), uint32((currCtr + 1) >> 32), n0, n1,
+			})
+			st3_B = archsimd.LoadUint32x8Array(&[8]uint32{
+				uint32(currCtr + 2), uint32((currCtr + 2) >> 32), n0, n1,
+				uint32(currCtr + 3), uint32((currCtr + 3) >> 32), n0, n1,
+			})
 		}
 	}
 
@@ -265,20 +271,231 @@ func polyStep(h0, h1, h2, r0, r1, m0, m1 uint64) (uint64, uint64, uint64) {
 }
 
 // aead_interleaved_write_simd effectue le chiffrement ChaCha20 et le hachage Poly1305
-// par chunks de 256 octets pour une localité de cache L1 optimale sans déversement de registres.
+// en micro-entrelacement strict au sein des 10 double-rounds ChaCha20.
 func aead_interleaved_write_simd(ctx *Crypto_aead_ctx, polyCtx *Crypto_poly1305_ctx, cipher_text, plain_text []byte, numChunks uint64, startCtr uint64) uint64 {
+	r0 := uint64(polyCtx.R[0]) | (uint64(polyCtx.R[1]) << 32)
+	r1 := uint64(polyCtx.R[2]) | (uint64(polyCtx.R[3]) << 32)
+
+	h0 := uint64(polyCtx.H[0]) | (uint64(polyCtx.H[1]) << 32)
+	h1 := uint64(polyCtx.H[2]) | (uint64(polyCtx.H[3]) << 32)
+	h2 := uint64(polyCtx.H[4])
+
+	k0 := binary.LittleEndian.Uint32(ctx.Key[0:4])
+	k1 := binary.LittleEndian.Uint32(ctx.Key[4:8])
+	k2 := binary.LittleEndian.Uint32(ctx.Key[8:12])
+	k3 := binary.LittleEndian.Uint32(ctx.Key[12:16])
+	k4 := binary.LittleEndian.Uint32(ctx.Key[16:20])
+	k5 := binary.LittleEndian.Uint32(ctx.Key[20:24])
+	k6 := binary.LittleEndian.Uint32(ctx.Key[24:28])
+	k7 := binary.LittleEndian.Uint32(ctx.Key[28:32])
+
+	n0 := binary.LittleEndian.Uint32(ctx.Nonce[0:4])
+	n1 := binary.LittleEndian.Uint32(ctx.Nonce[4:8])
+
+	st0 := archsimd.LoadUint32x8Array(&[8]uint32{c0_djb, c1_djb, c2_djb, c3_djb, c0_djb, c1_djb, c2_djb, c3_djb})
+	st1 := archsimd.LoadUint32x8Array(&[8]uint32{k0, k1, k2, k3, k0, k1, k2, k3})
+	st2 := archsimd.LoadUint32x8Array(&[8]uint32{k4, k5, k6, k7, k4, k5, k6, k7})
+
 	currCtr := startCtr
-	offset := 0
+	ctr0_lo, ctr0_hi := uint32(currCtr), uint32(currCtr>>32)
+	ctr1_lo, ctr1_hi := uint32(currCtr+1), uint32((currCtr+1)>>32)
+	ctr2_lo, ctr2_hi := uint32(currCtr+2), uint32((currCtr+2)>>32)
+	ctr3_lo, ctr3_hi := uint32(currCtr+3), uint32((currCtr+3)>>32)
 
-	for c := uint64(0); c < numChunks; c++ {
-		// 1. Chiffrement de 4 blocs ChaCha20 (256 octets)
-		currCtr = chacha20_djb_simd_4x(cipher_text[offset:offset+256], plain_text[offset:offset+256], ctx.Key[:], ctx.Nonce[:], currCtr, 4)
+	st3_A := archsimd.LoadUint32x8Array(&[8]uint32{
+		ctr0_lo, ctr0_hi, n0, n1,
+		ctr1_lo, ctr1_hi, n0, n1,
+	})
+	st3_B := archsimd.LoadUint32x8Array(&[8]uint32{
+		ctr2_lo, ctr2_hi, n0, n1,
+		ctr3_lo, ctr3_hi, n0, n1,
+	})
 
-		// 2. Absorption des 16 blocs de 16 octets dans Poly1305 (en cache L1)
-		Poly_blocks(polyCtx, cipher_text[offset:offset+256], 16, 1)
+	// Chiffrement du 1er chunk (Chunk 0)
+	{
+		v0_A, v1_A, v2_A, v3_A := st0, st1, st2, st3_A
+		v0_B, v1_B, v2_B, v3_B := st0, st1, st2, st3_B
 
-		offset += 256
+		for i := 0; i < 10; i++ {
+			v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
+			v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
+		}
+
+		v0_A = v0_A.Add(st0)
+		v1_A = v1_A.Add(st1)
+		v2_A = v2_A.Add(st2)
+		v3_A = v3_A.Add(st3_A)
+
+		v0_B = v0_B.Add(st0)
+		v1_B = v1_B.Add(st1)
+		v2_B = v2_B.Add(st2)
+		v3_B = v3_B.Add(st3_B)
+
+		// Store Chunk 0
+		k0_0, k0_1, k0_2, k0_3 := v0_A.GetLo().AsUint8x16(), v1_A.GetLo().AsUint8x16(), v2_A.GetLo().AsUint8x16(), v3_A.GetLo().AsUint8x16()
+		archsimd.LoadUint8x16(plain_text[0:16]).Xor(k0_0).Store(cipher_text[0:16])
+		archsimd.LoadUint8x16(plain_text[16:32]).Xor(k0_1).Store(cipher_text[16:32])
+		archsimd.LoadUint8x16(plain_text[32:48]).Xor(k0_2).Store(cipher_text[32:48])
+		archsimd.LoadUint8x16(plain_text[48:64]).Xor(k0_3).Store(cipher_text[48:64])
+
+		k1_0, k1_1, k1_2, k1_3 := v0_A.GetHi().AsUint8x16(), v1_A.GetHi().AsUint8x16(), v2_A.GetHi().AsUint8x16(), v3_A.GetHi().AsUint8x16()
+		archsimd.LoadUint8x16(plain_text[64:80]).Xor(k1_0).Store(cipher_text[64:80])
+		archsimd.LoadUint8x16(plain_text[80:96]).Xor(k1_1).Store(cipher_text[80:96])
+		archsimd.LoadUint8x16(plain_text[96:112]).Xor(k1_2).Store(cipher_text[96:112])
+		archsimd.LoadUint8x16(plain_text[112:128]).Xor(k1_3).Store(cipher_text[112:128])
+
+		k2_0, k2_1, k2_2, k2_3 := v0_B.GetLo().AsUint8x16(), v1_B.GetLo().AsUint8x16(), v2_B.GetLo().AsUint8x16(), v3_B.GetLo().AsUint8x16()
+		archsimd.LoadUint8x16(plain_text[128:144]).Xor(k2_0).Store(cipher_text[128:144])
+		archsimd.LoadUint8x16(plain_text[144:160]).Xor(k2_1).Store(cipher_text[144:160])
+		archsimd.LoadUint8x16(plain_text[160:176]).Xor(k2_2).Store(cipher_text[160:176])
+		archsimd.LoadUint8x16(plain_text[176:192]).Xor(k2_3).Store(cipher_text[176:192])
+
+		k3_0, k3_1, k3_2, k3_3 := v0_B.GetHi().AsUint8x16(), v1_B.GetHi().AsUint8x16(), v2_B.GetHi().AsUint8x16(), v3_B.GetHi().AsUint8x16()
+		archsimd.LoadUint8x16(plain_text[192:208]).Xor(k3_0).Store(cipher_text[192:208])
+		archsimd.LoadUint8x16(plain_text[208:224]).Xor(k3_1).Store(cipher_text[208:224])
+		archsimd.LoadUint8x16(plain_text[224:240]).Xor(k3_2).Store(cipher_text[224:240])
+		archsimd.LoadUint8x16(plain_text[240:256]).Xor(k3_3).Store(cipher_text[240:256])
+
+		currCtr += 4
+		st3_A = st3_A.Add(ctrInc4)
+		st3_B = st3_B.Add(ctrInc4)
+		if lo := uint32(currCtr); lo < 4 || lo > 0xFFFFFFFC {
+			st3_A = archsimd.LoadUint32x8Array(&[8]uint32{
+				uint32(currCtr), uint32(currCtr >> 32), n0, n1,
+				uint32(currCtr + 1), uint32((currCtr + 1) >> 32), n0, n1,
+			})
+			st3_B = archsimd.LoadUint32x8Array(&[8]uint32{
+				uint32(currCtr + 2), uint32((currCtr + 2) >> 32), n0, n1,
+				uint32(currCtr + 3), uint32((currCtr + 3) >> 32), n0, n1,
+			})
+		}
 	}
+
+	// Boucle principale entrelacée pour les chunks 1 à numChunks-1 :
+	for c := uint64(1); c < numChunks; c++ {
+		prevOff := int((c - 1) * 256)
+		currOff := int(c * 256)
+
+		v0_A, v1_A, v2_A, v3_A := st0, st1, st2, st3_A
+		v0_B, v1_B, v2_B, v3_B := st0, st1, st2, st3_B
+
+		// Tour 0 : Poly blocks 0 & 1
+		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
+		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff:prevOff+8]), binary.LittleEndian.Uint64(cipher_text[prevOff+8:prevOff+16]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+16:prevOff+24]), binary.LittleEndian.Uint64(cipher_text[prevOff+24:prevOff+32]))
+
+		// Tour 1 : Poly blocks 2 & 3
+		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
+		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+32:prevOff+40]), binary.LittleEndian.Uint64(cipher_text[prevOff+40:prevOff+48]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+48:prevOff+56]), binary.LittleEndian.Uint64(cipher_text[prevOff+56:prevOff+64]))
+
+		// Tour 2 : Poly blocks 4 & 5
+		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
+		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+64:prevOff+72]), binary.LittleEndian.Uint64(cipher_text[prevOff+72:prevOff+80]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+80:prevOff+88]), binary.LittleEndian.Uint64(cipher_text[prevOff+88:prevOff+96]))
+
+		// Tour 3 : Poly blocks 6 & 7
+		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
+		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+96:prevOff+104]), binary.LittleEndian.Uint64(cipher_text[prevOff+104:prevOff+112]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+112:prevOff+120]), binary.LittleEndian.Uint64(cipher_text[prevOff+120:prevOff+128]))
+
+		// Tour 4 : Poly blocks 8 & 9
+		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
+		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+128:prevOff+136]), binary.LittleEndian.Uint64(cipher_text[prevOff+136:prevOff+144]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+144:prevOff+152]), binary.LittleEndian.Uint64(cipher_text[prevOff+152:prevOff+160]))
+
+		// Tour 5 : Poly blocks 10 & 11
+		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
+		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+160:prevOff+168]), binary.LittleEndian.Uint64(cipher_text[prevOff+168:prevOff+176]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+176:prevOff+184]), binary.LittleEndian.Uint64(cipher_text[prevOff+184:prevOff+192]))
+
+		// Tour 6 : Poly blocks 12 & 13
+		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
+		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+192:prevOff+200]), binary.LittleEndian.Uint64(cipher_text[prevOff+200:prevOff+208]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+208:prevOff+216]), binary.LittleEndian.Uint64(cipher_text[prevOff+216:prevOff+224]))
+
+		// Tour 7 : Poly blocks 14 & 15
+		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
+		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+224:prevOff+232]), binary.LittleEndian.Uint64(cipher_text[prevOff+232:prevOff+240]))
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[prevOff+240:prevOff+248]), binary.LittleEndian.Uint64(cipher_text[prevOff+248:prevOff+256]))
+
+		// Tour 8 & 9 : Finalisation tours ChaCha20
+		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
+		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
+
+		v0_A, v1_A, v2_A, v3_A = chacha20DoubleBlockSIMD256(v0_A, v1_A, v2_A, v3_A)
+		v0_B, v1_B, v2_B, v3_B = chacha20DoubleBlockSIMD256(v0_B, v1_B, v2_B, v3_B)
+
+		v0_A = v0_A.Add(st0)
+		v1_A = v1_A.Add(st1)
+		v2_A = v2_A.Add(st2)
+		v3_A = v3_A.Add(st3_A)
+
+		v0_B = v0_B.Add(st0)
+		v1_B = v1_B.Add(st1)
+		v2_B = v2_B.Add(st2)
+		v3_B = v3_B.Add(st3_B)
+
+		// Store Chunk c
+		k0_0, k0_1, k0_2, k0_3 := v0_A.GetLo().AsUint8x16(), v1_A.GetLo().AsUint8x16(), v2_A.GetLo().AsUint8x16(), v3_A.GetLo().AsUint8x16()
+		archsimd.LoadUint8x16(plain_text[currOff:currOff+16]).Xor(k0_0).Store(cipher_text[currOff:currOff+16])
+		archsimd.LoadUint8x16(plain_text[currOff+16:currOff+32]).Xor(k0_1).Store(cipher_text[currOff+16:currOff+32])
+		archsimd.LoadUint8x16(plain_text[currOff+32:currOff+48]).Xor(k0_2).Store(cipher_text[currOff+32:currOff+48])
+		archsimd.LoadUint8x16(plain_text[currOff+48:currOff+64]).Xor(k0_3).Store(cipher_text[currOff+48:currOff+64])
+
+		k1_0, k1_1, k1_2, k1_3 := v0_A.GetHi().AsUint8x16(), v1_A.GetHi().AsUint8x16(), v2_A.GetHi().AsUint8x16(), v3_A.GetHi().AsUint8x16()
+		archsimd.LoadUint8x16(plain_text[currOff+64:currOff+80]).Xor(k1_0).Store(cipher_text[currOff+64:currOff+80])
+		archsimd.LoadUint8x16(plain_text[currOff+80:currOff+96]).Xor(k1_1).Store(cipher_text[currOff+80:currOff+96])
+		archsimd.LoadUint8x16(plain_text[currOff+96:currOff+112]).Xor(k1_2).Store(cipher_text[currOff+96:currOff+112])
+		archsimd.LoadUint8x16(plain_text[currOff+112:currOff+128]).Xor(k1_3).Store(cipher_text[currOff+112:currOff+128])
+
+		k2_0, k2_1, k2_2, k2_3 := v0_B.GetLo().AsUint8x16(), v1_B.GetLo().AsUint8x16(), v2_B.GetLo().AsUint8x16(), v3_B.GetLo().AsUint8x16()
+		archsimd.LoadUint8x16(plain_text[currOff+128:currOff+144]).Xor(k2_0).Store(cipher_text[currOff+128:currOff+144])
+		archsimd.LoadUint8x16(plain_text[currOff+144:currOff+160]).Xor(k2_1).Store(cipher_text[currOff+144:currOff+160])
+		archsimd.LoadUint8x16(plain_text[currOff+160:currOff+176]).Xor(k2_2).Store(cipher_text[currOff+160:currOff+176])
+		archsimd.LoadUint8x16(plain_text[currOff+176:currOff+192]).Xor(k2_3).Store(cipher_text[currOff+176:currOff+192])
+
+		k3_0, k3_1, k3_2, k3_3 := v0_B.GetHi().AsUint8x16(), v1_B.GetHi().AsUint8x16(), v2_B.GetHi().AsUint8x16(), v3_B.GetHi().AsUint8x16()
+		archsimd.LoadUint8x16(plain_text[currOff+192:currOff+208]).Xor(k3_0).Store(cipher_text[currOff+192:currOff+208])
+		archsimd.LoadUint8x16(plain_text[currOff+208:currOff+224]).Xor(k3_1).Store(cipher_text[currOff+208:currOff+224])
+		archsimd.LoadUint8x16(plain_text[currOff+224:currOff+240]).Xor(k3_2).Store(cipher_text[currOff+224:currOff+240])
+		archsimd.LoadUint8x16(plain_text[currOff+240:currOff+256]).Xor(k3_3).Store(cipher_text[currOff+240:currOff+256])
+
+		currCtr += 4
+		st3_A = st3_A.Add(ctrInc4)
+		st3_B = st3_B.Add(ctrInc4)
+		if lo := uint32(currCtr); lo < 4 || lo > 0xFFFFFFFC {
+			st3_A = archsimd.LoadUint32x8Array(&[8]uint32{
+				uint32(currCtr), uint32(currCtr >> 32), n0, n1,
+				uint32(currCtr + 1), uint32((currCtr + 1) >> 32), n0, n1,
+			})
+			st3_B = archsimd.LoadUint32x8Array(&[8]uint32{
+				uint32(currCtr + 2), uint32((currCtr + 2) >> 32), n0, n1,
+				uint32(currCtr + 3), uint32((currCtr + 3) >> 32), n0, n1,
+			})
+		}
+	}
+
+	// Absorption du dernier chunk (Chunk numChunks-1) dans Poly1305
+	lastOff := int((numChunks - 1) * 256)
+	for b := 0; b < 16; b++ {
+		bOff := lastOff + b*16
+		h0, h1, h2 = polyStep(h0, h1, h2, r0, r1, binary.LittleEndian.Uint64(cipher_text[bOff:bOff+8]), binary.LittleEndian.Uint64(cipher_text[bOff+8:bOff+16]))
+	}
+
+	polyCtx.H[0] = uint32(h0)
+	polyCtx.H[1] = uint32(h0 >> 32)
+	polyCtx.H[2] = uint32(h1)
+	polyCtx.H[3] = uint32(h1 >> 32)
+	polyCtx.H[4] = uint32(h2)
 
 	return currCtr
 }

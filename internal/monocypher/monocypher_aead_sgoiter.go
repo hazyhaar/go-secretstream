@@ -81,8 +81,6 @@ type Ge_precomp struct {
 	T2 [10]int
 }
 
-
-
 var chacha20_constant = []byte("expand 32-byte k")
 var zero_arr [128]byte
 var zero = zero_arr[:]
@@ -346,7 +344,6 @@ func Crypto_chacha20_h(out []byte, key []byte, in []byte) {
 	clear(v4)
 }
 
-
 func Crypto_chacha20_ietf(cipher_text []byte, plain_text []byte, text_size uint64, key []byte, nonce []byte, ctr uint32) uint32 {
 	return uint32(Crypto_chacha20_djb(cipher_text, plain_text, text_size, key, nonce[4:], (uint64(ctr) + (uint64(Load32_le(nonce)) << 32))))
 }
@@ -359,7 +356,6 @@ func Crypto_chacha20_x(cipher_text []byte, plain_text []byte, text_size uint64, 
 	clear(v6)
 	return ctr
 }
-
 
 func Crypto_poly1305_init(ctx *Crypto_poly1305_ctx, key []byte) {
 	var v3 uint64
@@ -2390,7 +2386,6 @@ func Fe_isequal(f []int, g []int) int {
 	return (1 + v7)
 }
 
-
 func Fe_invert(out []int, x []int) {
 	var _arr_v2 [10]int
 	v2 := _arr_v2[:]
@@ -2528,8 +2523,6 @@ func Is_above_l(x []uint32) int {
 	}
 	return int(v2)
 }
-
-
 
 func Crypto_eddsa_reduce(reduced []byte, expanded []byte) {
 	var _arr_v2 [16]uint32
@@ -2685,9 +2678,6 @@ func Ge_double(s *Ge, p *Ge, q *Ge) {
 	Fe_mul(s.T[:], q.X[:], q.T[:])
 }
 
-
-
-
 func Crypto_eddsa_scalarbase(point []byte, scalar []byte) {
 	var v2 Ge
 	Ge_scalarmult_base(&v2, scalar)
@@ -2809,7 +2799,6 @@ func Add_xl(s []byte, x uint8) {
 		v8++
 	}
 }
-
 
 func Select_lop(out []int, x []int, k []int, cofactor uint8) {
 	var _arr_v4 [10]int
@@ -4034,7 +4023,6 @@ func Crypto_aead_init_ietf(ctx *Crypto_aead_ctx, key []byte, nonce []byte) {
 	ctx.Counter = uint64(Load32_le(nonce)) << 32
 }
 
-
 func Crypto_aead_read(ctx *Crypto_aead_ctx, plain_text []byte, mac []byte, ad []byte, ad_size uint64, cipher_text []byte, text_size uint64) int {
 	var v24 uint64
 	var _arr_v7 [64]uint8
@@ -4068,8 +4056,4 @@ func Crypto_aead_unlock(plain_text []byte, mac []byte, key []byte, nonce []byte,
 	Crypto_aead_init_x(&v8, key, nonce)
 return Crypto_aead_read(&v8, plain_text, mac, ad, ad_size, cipher_text, text_size)
 }
-
-
-
-
 
