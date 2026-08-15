@@ -5,18 +5,8 @@ go 1.26
 require (
 	code.hazyhaar.fr/devhoros/c2simd v0.0.0
 	golang.org/x/crypto v0.54.0
-	modernc.org/libc v1.74.4
 )
 
-replace code.hazyhaar.fr/devhoros/c2simd => github.com/hazyhaar/c2simd v0.0.0-20260814212509-20b5a5ba894a
+replace code.hazyhaar.fr/devhoros/c2simd => github.com/hazyhaar/c2simd v0.0.0-20260815212259-38aa4a2a8809
 
-require (
-	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
-	github.com/mattn/go-isatty v0.0.22 // indirect
-	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.11.0 // indirect
-)
+require golang.org/x/sys v0.47.0 // indirect

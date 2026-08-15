@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	ccgo "github.com/hazyhaar/go-secretstream/internal/monocypher"
-	sgoi "github.com/hazyhaar/go-secretstream/internal/monocypher"
+	sgoi "github.com/hazyhaar/go-secretstream/internal/monocypher55"
 )
 
 func keyNonce() (key, nonce []byte) {

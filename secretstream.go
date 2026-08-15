@@ -4,7 +4,9 @@
 //   - Standard (NewEncryptor): maison framing (BE4 length + XChaCha20-Poly1305 AEAD via engine).
 //   - Libsodium (NewLibsodiumEncryptor): crypto_secretstream_xchacha20poly1305 wire (wal-g compatible).
 //
-// AEAD backend for standard mode: c2simd (default) or monocypher_sgoiter (-tags aead_sgoiter).
+// AEAD backend for standard mode: monocypher55 (default — bascule 2026-08-15,
+// gate à trois preuves : fil croisé bit-identique, aliasing, rejet de forge)
+// ou c2simd (-tags aead_c2simd).
 package secretstream55
 
 import (
@@ -33,6 +35,7 @@ type Encryptor struct {
 	w              io.Writer
 	key            [32]byte
 	nonce          [24]byte
+	subkey         [32]byte // HChaCha20(key, nonce[0:16]) — dérivée une fois par stream
 	seq            uint64
 	wireBuf        []byte
 	scratchPayload []byte
@@ -61,6 +64,7 @@ func newEncryptor(w io.Writer, key []byte, eng engine.AEAD) (*Encryptor, error) 
 	if _, err := w.Write(enc.nonce[:]); err != nil {
 		return nil, fmt.Errorf("secretstream55: failed to write header nonce: %w", err)
 	}
+	eng.HChaCha20(enc.subkey[:], enc.key[:], enc.nonce[0:16])
 	return &enc, nil
 }
 
@@ -75,17 +79,18 @@ func (e *Encryptor) Write(p []byte) (int, error) {
 		chunk := p[:chunkLen]
 		p = p[chunkLen:]
 
-		var chunkNonce [24]byte
-		copy(chunkNonce[:], e.nonce[:])
+		// Nonce IETF 12 octets : 4 octets zéro || (base ^ seq). La sous-clé
+		// HChaCha20 (nonce[0:16] constant par stream) est cachée dans e.subkey.
+		var chunkNonce12 [12]byte
 		baseSeq := binary.BigEndian.Uint64(e.nonce[16:24])
-		binary.BigEndian.PutUint64(chunkNonce[16:24], baseSeq^e.seq)
+		binary.BigEndian.PutUint64(chunkNonce12[4:12], baseSeq^e.seq)
 		binary.BigEndian.PutUint64(e.adBuf[:], e.seq)
 		e.seq++
 
 		payload := chunk
 		var mac [16]byte
 		dstCipher := e.wireBuf[4 : 4+len(payload)]
-		if err := e.eng.LockDst(dstCipher, &mac, e.key[:], chunkNonce[:], e.adBuf[:], payload); err != nil {
+		if err := e.eng.LockSubkeyDst(dstCipher, &mac, e.subkey[:], chunkNonce12[:], e.adBuf[:], payload); err != nil {
 			return totalWritten, fmt.Errorf("secretstream55: AEAD lock failed: %w", err)
 		}
 		macOffset := 4 + len(payload)
@@ -106,6 +111,7 @@ type Decryptor struct {
 	r        io.Reader
 	key      [32]byte
 	nonce    [24]byte
+	subkey   [32]byte // HChaCha20(key, nonce[0:16]) — dérivée une fois par stream
 	seq      uint64
 	outBuf   []byte
 	inBuf    []byte
@@ -133,6 +139,7 @@ func newDecryptor(r io.Reader, key []byte, eng engine.AEAD) (*Decryptor, error) 
 	if _, err := io.ReadFull(r, dec.nonce[:]); err != nil {
 		return nil, fmt.Errorf("secretstream55: failed to read header nonce: %w", err)
 	}
+	eng.HChaCha20(dec.subkey[:], dec.key[:], dec.nonce[0:16])
 	return &dec, nil
 }
 
@@ -162,10 +169,9 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 	cipherText := payloadBuf[:cipherLen]
 	mac := payloadBuf[cipherLen:]
 
-	var chunkNonce [24]byte
-	copy(chunkNonce[:], d.nonce[:])
+	var chunkNonce12 [12]byte
 	baseSeq := binary.BigEndian.Uint64(d.nonce[16:24])
-	binary.BigEndian.PutUint64(chunkNonce[16:24], baseSeq^d.seq)
+	binary.BigEndian.PutUint64(chunkNonce12[4:12], baseSeq^d.seq)
 	binary.BigEndian.PutUint64(d.adBuf[:], d.seq)
 	d.seq++
 
@@ -173,7 +179,7 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 		d.plainBuf = make([]byte, cipherLen)
 	}
 	plainDst := d.plainBuf[:cipherLen]
-	unlocked, err := d.eng.UnlockDst(plainDst, d.key[:], chunkNonce[:], d.adBuf[:], cipherText, mac)
+	unlocked, err := d.eng.UnlockSubkeyDst(plainDst, d.subkey[:], chunkNonce12[:], d.adBuf[:], cipherText, mac)
 	if err != nil {
 		return 0, fmt.Errorf("secretstream55: AEAD unlock failed: %w", err)
 	}

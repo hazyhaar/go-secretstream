@@ -1,4 +1,4 @@
-//go:build !aead_sgoiter
+//go:build aead_c2simd
 
 package engine
 
@@ -19,5 +19,6 @@ func (c2simdEngine) UnlockDst(dstPlain []byte, key, nonce, ad, cipher, mac []byt
 }
 
 func (c2simdEngine) HChaCha20(out, key, in []byte) {
-	c2simd.HChaCha20(out, key, in)
+	// c2simd.HChaCha20 signature is (key, nonce, out).
+	c2simd.HChaCha20(key, in, out)
 }

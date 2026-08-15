@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	ccgo "github.com/hazyhaar/go-secretstream/internal/monocypher"
-	sgoi "github.com/hazyhaar/go-secretstream/internal/monocypher"
+	sgoi "github.com/hazyhaar/go-secretstream/internal/monocypher55"
 )
 
 func TestParityVsCCGO_36(t *testing.T) {

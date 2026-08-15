@@ -6,7 +6,7 @@ Streaming encryption in Pure Go (CGO=0).
 
 | API | Wire | Crypto |
 |-----|------|--------|
-| `NewEncryptor` / `NewDecryptor` | **Maison** (BE4 + AEAD) | `engine` : **c2simd** (défaut) ou **monocypher_sgoiter** (`-tags aead_sgoiter`) |
+| `NewEncryptor` / `NewDecryptor` | **Maison** (BE4 + AEAD) | `engine` : **monocypher55** (défaut — bascule 2026-08-15) ou **c2simd** (`-tags aead_c2simd`) |
 | `NewLibsodiumEncryptor` / `NewLibsodiumDecryptor` | **libsodium** `crypto_secretstream_xchacha20poly1305` (wal-g) | `internal/lsstream` (ChaCha20-IETF + Poly1305, bit-compat C) |
 
 Libsodium mode **requires** `Close()` on the encryptor to emit `TAG_FINAL`.
