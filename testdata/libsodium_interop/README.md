@@ -24,5 +24,3 @@ pkg-config --exists libsodium || exit 1
 
 - Goldens versionnés → tests offline sans libsodium runtime.  
 - Driver présent → tests live `Go→C` et `C→Go`.
-
-Voir `TODO_V2_SGOITER_LIBSODIUM.md`.

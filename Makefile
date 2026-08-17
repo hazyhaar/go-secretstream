@@ -5,7 +5,7 @@ export GOWORK ?= off
 test:
 	go test -count=1 ./...
 	go test -count=1 ./internal/lsstream/
-	go test -count=1 ../monocypher55/
+	go test -count=1 ./internal/monocypher55/
 
 interop-driver:
 	mkdir -p testdata/libsodium_interop/bin

@@ -24,7 +24,6 @@ make test-sgoiter      # standard mode with sgoiter AEAD backend
 ## Docs
 
 - Wire libsodium : [`docs/WIRE_LIBSODIUM.md`](docs/WIRE_LIBSODIUM.md)
-- Plan V2 : [`TODO_V2_SGOITER_LIBSODIUM.md`](TODO_V2_SGOITER_LIBSODIUM.md)
 
 ## Benchmark (standard / c2simd, historique)
 
