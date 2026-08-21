@@ -28,3 +28,11 @@ make test-sgoiter      # standard mode with sgoiter AEAD backend
 ## Benchmark (standard / c2simd, historique)
 
 See `secretstream_bench_test.go`. Libsodium-wire benches: `internal/lsstream` / wal-g upstream.
+
+## Contributors
+
+- **Hazyhaar** ([@hazyhaar](https://github.com/hazyhaar)) — Architecture, system design & maintainer
+- **Gemini** (Google DeepMind) — Adversarial audits, research & verification
+- **Grok** (xAI) — Low-level robustness, protocol inspection & fuzzing
+- **Claude** (Anthropic) — Go 1.27 SIMD transpiler passes & CUE formal schemas
+
