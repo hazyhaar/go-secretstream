@@ -137,26 +137,26 @@ func (st *streamState) advance(mac []byte) error {
 }
 
 func (st *streamState) rekey() error {
-	msg := make([]byte, 32+inonceBytes)
+	var msg [32 + inonceBytes]byte
 	copy(msg[:32], st.k[:])
 	copy(msg[32:], st.nonce[counterBytes:])
 	c, err := st.chacha(0)
 	if err != nil {
-		memzero(msg)
+		memzero(msg[:])
 		return fmt.Errorf("secretstream rekey: chacha: %w", err)
 	}
-	out := make([]byte, len(msg))
-	c.XORKeyStream(out, msg)
+	var out [32 + inonceBytes]byte
+	c.XORKeyStream(out[:], msg[:])
 	copy(st.k[:], out[:32])
 	copy(st.nonce[counterBytes:], out[32:32+inonceBytes])
 	st.counterReset()
 	if err := st.initCipher(); err != nil {
-		memzero(msg)
-		memzero(out)
+		memzero(msg[:])
+		memzero(out[:])
 		return err
 	}
-	memzero(msg)
-	memzero(out)
+	memzero(msg[:])
+	memzero(out[:])
 	return nil
 }
 

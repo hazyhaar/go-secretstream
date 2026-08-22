@@ -85,7 +85,6 @@ func (e *Encryptor) Write(p []byte) (int, error) {
 		baseSeq := binary.BigEndian.Uint64(e.nonce[16:24])
 		binary.BigEndian.PutUint64(chunkNonce12[4:12], baseSeq^e.seq)
 		binary.BigEndian.PutUint64(e.adBuf[:], e.seq)
-		e.seq++
 
 		payload := chunk
 		var mac [16]byte
@@ -98,9 +97,14 @@ func (e *Encryptor) Write(p []byte) (int, error) {
 		totalWireLen := uint32(len(payload) + 16)
 		binary.BigEndian.PutUint32(e.wireBuf[0:4], totalWireLen)
 		frameLen := 4 + len(payload) + 16
-		if _, err := e.w.Write(e.wireBuf[:frameLen]); err != nil {
+		n, err := e.w.Write(e.wireBuf[:frameLen])
+		if err != nil {
 			return totalWritten, err
 		}
+		if n != frameLen {
+			return totalWritten, fmt.Errorf("secretstream55: short write (%d/%d bytes)", n, frameLen)
+		}
+		e.seq++
 		totalWritten += chunkLen
 	}
 	return totalWritten, nil
@@ -154,8 +158,9 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 		return 0, err
 	}
 	chunkLen := binary.BigEndian.Uint32(d.lenBuf[:])
-	if chunkLen < 16 {
-		return 0, fmt.Errorf("secretstream55: payload length too short")
+	maxAllowed := uint32(ChunkSize + TagSize + 64)
+	if chunkLen < 16 || chunkLen > maxAllowed {
+		return 0, fmt.Errorf("secretstream55: invalid payload length %d (must be between 16 and %d)", chunkLen, maxAllowed)
 	}
 	totalPayloadLen := int(chunkLen)
 	if cap(d.inBuf) < totalPayloadLen {
@@ -173,7 +178,6 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 	baseSeq := binary.BigEndian.Uint64(d.nonce[16:24])
 	binary.BigEndian.PutUint64(chunkNonce12[4:12], baseSeq^d.seq)
 	binary.BigEndian.PutUint64(d.adBuf[:], d.seq)
-	d.seq++
 
 	if cap(d.plainBuf) < cipherLen {
 		d.plainBuf = make([]byte, cipherLen)
@@ -183,6 +187,7 @@ func (d *Decryptor) Read(p []byte) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("secretstream55: AEAD unlock failed: %w", err)
 	}
+	d.seq++
 	n := copy(p, unlocked)
 	if n < len(unlocked) {
 		d.outBuf = unlocked[n:]

@@ -140,3 +140,56 @@ func itoa(n int) string {
 	}
 	return string(b[i:])
 }
+
+func TestSecretStream_AntiDoS_ExcessiveFrameLength(t *testing.T) {
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	// Construction d'un flux malicieux : Header valide de 24 octets suivi d'un chunkLen forgé de 2 Gio (0x7fffffff)
+	var malicious bytes.Buffer
+	malicious.Write(bytes.Repeat([]byte{0x42}, 24))                               // Header nonce
+	malicious.Write([]byte{0x7f, 0xff, 0xff, 0xff})                               // 2 Gio
+	malicious.Write(bytes.Repeat([]byte{0x00}, 100))                              // Début payload
+
+	dec, err := secretstream55.NewDecryptor(&malicious, key)
+	if err != nil {
+		t.Fatalf("NewDecryptor failed: %v", err)
+	}
+	var dst [100]byte
+	_, err = dec.Read(dst[:])
+	if err == nil {
+		t.Fatal("attendu échec anti-DoS sur chunkLen excessif, obtenu nil")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("invalid payload length")) {
+		t.Fatalf("attendu message invalid payload length, obtenu: %v", err)
+	}
+}
+
+type shortWriter struct {
+	limit int
+	buf   bytes.Buffer
+}
+
+func (s *shortWriter) Write(p []byte) (int, error) {
+	if len(p) > s.limit {
+		n, _ := s.buf.Write(p[:s.limit])
+		return n, nil // Short write sans erreur explicite
+	}
+	return s.buf.Write(p)
+}
+
+func TestSecretStream_ShortWriteDetected(t *testing.T) {
+	key := make([]byte, 32)
+	rand.Read(key)
+
+	sw := &shortWriter{limit: 10}
+	enc, err := secretstream55.NewEncryptor(sw, key)
+	if err != nil {
+		t.Fatalf("NewEncryptor failed: %v", err)
+	}
+	_, err = enc.Write([]byte("message de test qui dépasse la limite d'écriture de 10 octets"))
+	if err == nil {
+		t.Fatal("attendu erreur sur short write non détecté, obtenu nil")
+	}
+}
+
