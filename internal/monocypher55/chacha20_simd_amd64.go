@@ -1,5 +1,7 @@
 //go:build goexperiment.simd && amd64
 
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package monocypher55
 
 import (
@@ -139,10 +141,10 @@ func chacha20_djb_simd_4x(cipher_text, plain_text []byte, key, nonce []byte, ctr
 		k0_2 := v2_A.GetLo().AsUint8x16()
 		k0_3 := v3_A.GetLo().AsUint8x16()
 		if plain_text != nil {
-			archsimd.LoadUint8x16(plain_text[bOff0:bOff0+16]).Xor(k0_0).Store(cipher_text[bOff0 : bOff0+16])
-			archsimd.LoadUint8x16(plain_text[bOff0+16:bOff0+32]).Xor(k0_1).Store(cipher_text[bOff0+16 : bOff0+32])
-			archsimd.LoadUint8x16(plain_text[bOff0+32:bOff0+48]).Xor(k0_2).Store(cipher_text[bOff0+32 : bOff0+48])
-			archsimd.LoadUint8x16(plain_text[bOff0+48:bOff0+64]).Xor(k0_3).Store(cipher_text[bOff0+48 : bOff0+64])
+			archsimd.LoadUint8x16(plain_text[bOff0 : bOff0+16]).Xor(k0_0).Store(cipher_text[bOff0 : bOff0+16])
+			archsimd.LoadUint8x16(plain_text[bOff0+16 : bOff0+32]).Xor(k0_1).Store(cipher_text[bOff0+16 : bOff0+32])
+			archsimd.LoadUint8x16(plain_text[bOff0+32 : bOff0+48]).Xor(k0_2).Store(cipher_text[bOff0+32 : bOff0+48])
+			archsimd.LoadUint8x16(plain_text[bOff0+48 : bOff0+64]).Xor(k0_3).Store(cipher_text[bOff0+48 : bOff0+64])
 		} else {
 			k0_0.Store(cipher_text[bOff0 : bOff0+16])
 			k0_1.Store(cipher_text[bOff0+16 : bOff0+32])
@@ -157,10 +159,10 @@ func chacha20_djb_simd_4x(cipher_text, plain_text []byte, key, nonce []byte, ctr
 		k1_2 := v2_A.GetHi().AsUint8x16()
 		k1_3 := v3_A.GetHi().AsUint8x16()
 		if plain_text != nil {
-			archsimd.LoadUint8x16(plain_text[bOff1:bOff1+16]).Xor(k1_0).Store(cipher_text[bOff1 : bOff1+16])
-			archsimd.LoadUint8x16(plain_text[bOff1+16:bOff1+32]).Xor(k1_1).Store(cipher_text[bOff1+16 : bOff1+32])
-			archsimd.LoadUint8x16(plain_text[bOff1+32:bOff1+48]).Xor(k1_2).Store(cipher_text[bOff1+32 : bOff1+48])
-			archsimd.LoadUint8x16(plain_text[bOff1+48:bOff1+64]).Xor(k1_3).Store(cipher_text[bOff1+48 : bOff1+64])
+			archsimd.LoadUint8x16(plain_text[bOff1 : bOff1+16]).Xor(k1_0).Store(cipher_text[bOff1 : bOff1+16])
+			archsimd.LoadUint8x16(plain_text[bOff1+16 : bOff1+32]).Xor(k1_1).Store(cipher_text[bOff1+16 : bOff1+32])
+			archsimd.LoadUint8x16(plain_text[bOff1+32 : bOff1+48]).Xor(k1_2).Store(cipher_text[bOff1+32 : bOff1+48])
+			archsimd.LoadUint8x16(plain_text[bOff1+48 : bOff1+64]).Xor(k1_3).Store(cipher_text[bOff1+48 : bOff1+64])
 		} else {
 			k1_0.Store(cipher_text[bOff1 : bOff1+16])
 			k1_1.Store(cipher_text[bOff1+16 : bOff1+32])
@@ -175,10 +177,10 @@ func chacha20_djb_simd_4x(cipher_text, plain_text []byte, key, nonce []byte, ctr
 		k2_2 := v2_B.GetLo().AsUint8x16()
 		k2_3 := v3_B.GetLo().AsUint8x16()
 		if plain_text != nil {
-			archsimd.LoadUint8x16(plain_text[bOff2:bOff2+16]).Xor(k2_0).Store(cipher_text[bOff2 : bOff2+16])
-			archsimd.LoadUint8x16(plain_text[bOff2+16:bOff2+32]).Xor(k2_1).Store(cipher_text[bOff2+16 : bOff2+32])
-			archsimd.LoadUint8x16(plain_text[bOff2+32:bOff2+48]).Xor(k2_2).Store(cipher_text[bOff2+32 : bOff2+48])
-			archsimd.LoadUint8x16(plain_text[bOff2+48:bOff2+64]).Xor(k2_3).Store(cipher_text[bOff2+48 : bOff2+64])
+			archsimd.LoadUint8x16(plain_text[bOff2 : bOff2+16]).Xor(k2_0).Store(cipher_text[bOff2 : bOff2+16])
+			archsimd.LoadUint8x16(plain_text[bOff2+16 : bOff2+32]).Xor(k2_1).Store(cipher_text[bOff2+16 : bOff2+32])
+			archsimd.LoadUint8x16(plain_text[bOff2+32 : bOff2+48]).Xor(k2_2).Store(cipher_text[bOff2+32 : bOff2+48])
+			archsimd.LoadUint8x16(plain_text[bOff2+48 : bOff2+64]).Xor(k2_3).Store(cipher_text[bOff2+48 : bOff2+64])
 		} else {
 			k2_0.Store(cipher_text[bOff2 : bOff2+16])
 			k2_1.Store(cipher_text[bOff2+16 : bOff2+32])
@@ -193,10 +195,10 @@ func chacha20_djb_simd_4x(cipher_text, plain_text []byte, key, nonce []byte, ctr
 		k3_2 := v2_B.GetHi().AsUint8x16()
 		k3_3 := v3_B.GetHi().AsUint8x16()
 		if plain_text != nil {
-			archsimd.LoadUint8x16(plain_text[bOff3:bOff3+16]).Xor(k3_0).Store(cipher_text[bOff3 : bOff3+16])
-			archsimd.LoadUint8x16(plain_text[bOff3+16:bOff3+32]).Xor(k3_1).Store(cipher_text[bOff3+16 : bOff3+32])
-			archsimd.LoadUint8x16(plain_text[bOff3+32:bOff3+48]).Xor(k3_2).Store(cipher_text[bOff3+32 : bOff3+48])
-			archsimd.LoadUint8x16(plain_text[bOff3+48:bOff3+64]).Xor(k3_3).Store(cipher_text[bOff3+48 : bOff3+64])
+			archsimd.LoadUint8x16(plain_text[bOff3 : bOff3+16]).Xor(k3_0).Store(cipher_text[bOff3 : bOff3+16])
+			archsimd.LoadUint8x16(plain_text[bOff3+16 : bOff3+32]).Xor(k3_1).Store(cipher_text[bOff3+16 : bOff3+32])
+			archsimd.LoadUint8x16(plain_text[bOff3+32 : bOff3+48]).Xor(k3_2).Store(cipher_text[bOff3+32 : bOff3+48])
+			archsimd.LoadUint8x16(plain_text[bOff3+48 : bOff3+64]).Xor(k3_3).Store(cipher_text[bOff3+48 : bOff3+64])
 		} else {
 			k3_0.Store(cipher_text[bOff3 : bOff3+16])
 			k3_1.Store(cipher_text[bOff3+16 : bOff3+32])
@@ -426,28 +428,28 @@ func aead_interleaved_core_simd(ctx *Crypto_aead_ctx, polyCtx *Crypto_poly1305_c
 
 		// Store Chunk c
 		k0_0, k0_1, k0_2, k0_3 := v0_A.GetLo().AsUint8x16(), v1_A.GetLo().AsUint8x16(), v2_A.GetLo().AsUint8x16(), v3_A.GetLo().AsUint8x16()
-		archsimd.LoadUint8x16(src[currOff:currOff+16]).Xor(k0_0).Store(dst[currOff:currOff+16])
-		archsimd.LoadUint8x16(src[currOff+16:currOff+32]).Xor(k0_1).Store(dst[currOff+16:currOff+32])
-		archsimd.LoadUint8x16(src[currOff+32:currOff+48]).Xor(k0_2).Store(dst[currOff+32:currOff+48])
-		archsimd.LoadUint8x16(src[currOff+48:currOff+64]).Xor(k0_3).Store(dst[currOff+48:currOff+64])
+		archsimd.LoadUint8x16(src[currOff : currOff+16]).Xor(k0_0).Store(dst[currOff : currOff+16])
+		archsimd.LoadUint8x16(src[currOff+16 : currOff+32]).Xor(k0_1).Store(dst[currOff+16 : currOff+32])
+		archsimd.LoadUint8x16(src[currOff+32 : currOff+48]).Xor(k0_2).Store(dst[currOff+32 : currOff+48])
+		archsimd.LoadUint8x16(src[currOff+48 : currOff+64]).Xor(k0_3).Store(dst[currOff+48 : currOff+64])
 
 		k1_0, k1_1, k1_2, k1_3 := v0_A.GetHi().AsUint8x16(), v1_A.GetHi().AsUint8x16(), v2_A.GetHi().AsUint8x16(), v3_A.GetHi().AsUint8x16()
-		archsimd.LoadUint8x16(src[currOff+64:currOff+80]).Xor(k1_0).Store(dst[currOff+64:currOff+80])
-		archsimd.LoadUint8x16(src[currOff+80:currOff+96]).Xor(k1_1).Store(dst[currOff+80:currOff+96])
-		archsimd.LoadUint8x16(src[currOff+96:currOff+112]).Xor(k1_2).Store(dst[currOff+96:currOff+112])
-		archsimd.LoadUint8x16(src[currOff+112:currOff+128]).Xor(k1_3).Store(dst[currOff+112:currOff+128])
+		archsimd.LoadUint8x16(src[currOff+64 : currOff+80]).Xor(k1_0).Store(dst[currOff+64 : currOff+80])
+		archsimd.LoadUint8x16(src[currOff+80 : currOff+96]).Xor(k1_1).Store(dst[currOff+80 : currOff+96])
+		archsimd.LoadUint8x16(src[currOff+96 : currOff+112]).Xor(k1_2).Store(dst[currOff+96 : currOff+112])
+		archsimd.LoadUint8x16(src[currOff+112 : currOff+128]).Xor(k1_3).Store(dst[currOff+112 : currOff+128])
 
 		k2_0, k2_1, k2_2, k2_3 := v0_B.GetLo().AsUint8x16(), v1_B.GetLo().AsUint8x16(), v2_B.GetLo().AsUint8x16(), v3_B.GetLo().AsUint8x16()
-		archsimd.LoadUint8x16(src[currOff+128:currOff+144]).Xor(k2_0).Store(dst[currOff+128:currOff+144])
-		archsimd.LoadUint8x16(src[currOff+144:currOff+160]).Xor(k2_1).Store(dst[currOff+144:currOff+160])
-		archsimd.LoadUint8x16(src[currOff+160:currOff+176]).Xor(k2_2).Store(dst[currOff+160:currOff+176])
-		archsimd.LoadUint8x16(src[currOff+176:currOff+192]).Xor(k2_3).Store(dst[currOff+176:currOff+192])
+		archsimd.LoadUint8x16(src[currOff+128 : currOff+144]).Xor(k2_0).Store(dst[currOff+128 : currOff+144])
+		archsimd.LoadUint8x16(src[currOff+144 : currOff+160]).Xor(k2_1).Store(dst[currOff+144 : currOff+160])
+		archsimd.LoadUint8x16(src[currOff+160 : currOff+176]).Xor(k2_2).Store(dst[currOff+160 : currOff+176])
+		archsimd.LoadUint8x16(src[currOff+176 : currOff+192]).Xor(k2_3).Store(dst[currOff+176 : currOff+192])
 
 		k3_0, k3_1, k3_2, k3_3 := v0_B.GetHi().AsUint8x16(), v1_B.GetHi().AsUint8x16(), v2_B.GetHi().AsUint8x16(), v3_B.GetHi().AsUint8x16()
-		archsimd.LoadUint8x16(src[currOff+192:currOff+208]).Xor(k3_0).Store(dst[currOff+192:currOff+208])
-		archsimd.LoadUint8x16(src[currOff+208:currOff+224]).Xor(k3_1).Store(dst[currOff+208:currOff+224])
-		archsimd.LoadUint8x16(src[currOff+224:currOff+240]).Xor(k3_2).Store(dst[currOff+224:currOff+240])
-		archsimd.LoadUint8x16(src[currOff+240:currOff+256]).Xor(k3_3).Store(dst[currOff+240:currOff+256])
+		archsimd.LoadUint8x16(src[currOff+192 : currOff+208]).Xor(k3_0).Store(dst[currOff+192 : currOff+208])
+		archsimd.LoadUint8x16(src[currOff+208 : currOff+224]).Xor(k3_1).Store(dst[currOff+208 : currOff+224])
+		archsimd.LoadUint8x16(src[currOff+224 : currOff+240]).Xor(k3_2).Store(dst[currOff+224 : currOff+240])
+		archsimd.LoadUint8x16(src[currOff+240 : currOff+256]).Xor(k3_3).Store(dst[currOff+240 : currOff+256])
 
 		currCtr += 4
 		st3_A = st3_A.Add(ctrInc4)

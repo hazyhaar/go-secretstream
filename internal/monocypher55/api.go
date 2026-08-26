@@ -1,10 +1,31 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 // Package monocypher55 — Monocypher 4.0.2 via sgoiter (+ hands), CGO=0.
 // API AEAD alignée pour secretstream55 (tag aead_sgoiter).
 package monocypher55
 
-import "errors"
+import (
+	"errors"
+	"unsafe"
+)
 
 var ErrAEADCheckFailed = errors.New("monocypher55: AEAD authentication check failed")
+
+func anyOverlap(x, y []byte) bool {
+	return len(x) > 0 && len(y) > 0 &&
+		uintptr(unsafe.Pointer(&x[0])) <= uintptr(unsafe.Pointer(&y[len(y)-1])) &&
+		uintptr(unsafe.Pointer(&y[0])) <= uintptr(unsafe.Pointer(&x[len(x)-1]))
+}
+
+func inexactOverlap(x, y []byte) bool {
+	if len(x) == 0 || len(y) == 0 {
+		return false
+	}
+	if &x[0] == &y[0] {
+		return len(x) != len(y)
+	}
+	return anyOverlap(x, y)
+}
 
 func aeadPtrs(ad, payload []byte) (adPtr, payloadPtr []byte) {
 	if len(ad) > 0 {
@@ -39,6 +60,12 @@ func LockDst(dstCT, mac, key, nonce, ad, plainText []byte) error {
 	if len(dstCT) < len(plainText) {
 		return errors.New("monocypher55: dstCT shorter than plaintext")
 	}
+	if inexactOverlap(dstCT[:len(plainText)], plainText) {
+		panic("monocypher55: invalid buffer overlap between dstCT and plainText")
+	}
+	if anyOverlap(dstCT[:len(plainText)], ad) {
+		panic("monocypher55: invalid buffer overlap between dstCT and ad")
+	}
 	adPtr, ptPtr := aeadPtrs(ad, plainText)
 	Crypto_aead_lock(dstCT[:len(plainText)], mac[:16], key, nonce, adPtr, uint64(len(ad)), ptPtr, uint64(len(plainText)))
 	return nil
@@ -55,6 +82,12 @@ func UnlockDst(dstPT, key, nonce, mac, ad, cipherText []byte) error {
 	}
 	if len(dstPT) < len(cipherText) {
 		return errors.New("monocypher55: dstPT shorter than ciphertext")
+	}
+	if inexactOverlap(dstPT[:len(cipherText)], cipherText) {
+		panic("monocypher55: invalid buffer overlap between dstPT and cipherText")
+	}
+	if anyOverlap(dstPT[:len(cipherText)], ad) {
+		panic("monocypher55: invalid buffer overlap between dstPT and ad")
 	}
 	adPtr, ctPtr := aeadPtrs(ad, cipherText)
 	res := Crypto_aead_unlock(dstPT[:len(cipherText)], mac[:16], key, nonce, adPtr, uint64(len(ad)), ctPtr, uint64(len(cipherText)))

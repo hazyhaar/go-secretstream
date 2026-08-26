@@ -1,11 +1,20 @@
-.PHONY: test interop-driver interop-goldens interop-test test-sgoiter ci
+.PHONY: test test-fallback interop-driver interop-goldens interop-test ci
 
 export GOWORK ?= off
 
+# Recette nominale : chemin SIMD exigé (Go 1.27, GOEXPERIMENT=simd, amd64
+# AVX2). SECRETSTREAM_REQUIRE_SIMD=1 fait échouer la suite si le repli
+# scalaire est sélectionné par accident (TestSIMDSelectionNotSilent).
 test:
+	GOEXPERIMENT=simd SECRETSTREAM_REQUIRE_SIMD=1 go test -count=1 ./...
+	GOEXPERIMENT=simd SECRETSTREAM_REQUIRE_SIMD=1 go test -count=1 ./internal/lsstream/
+	GOEXPERIMENT=simd go test -count=1 ../monocypher55/
+
+# Repli scalaire, explicitement : mêmes tests sans SIMD (le bench gate se
+# déclare non applicable au lieu d'échouer).
+test-fallback:
 	go test -count=1 ./...
-	go test -count=1 ./internal/lsstream/
-	go test -count=1 ./internal/monocypher55/
+	go test -count=1 ../monocypher55/
 
 interop-driver:
 	mkdir -p testdata/libsodium_interop/bin
@@ -18,8 +27,5 @@ interop-goldens: interop-driver
 
 interop-test: interop-driver
 	go test -count=1 -run 'Interop|Libsodium' ./...
-
-test-sgoiter:
-	go test -count=1 -tags aead_c2simd ./...
 
 ci: test interop-test

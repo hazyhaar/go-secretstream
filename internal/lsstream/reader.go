@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Pure-Go libsodium secretstream reader (ported from wal-g fork, Apache-2.0).
 package lsstream
 
@@ -21,6 +23,7 @@ type Reader struct {
 	onceHeader sync.Once
 	key        []byte
 	headerErr  error
+	stickyErr  error
 	done       bool
 }
 
@@ -52,8 +55,12 @@ func (r *Reader) readHeader() {
 
 // Read implements io.Reader. Never returns (0, nil).
 func (r *Reader) Read(p []byte) (n int, err error) {
+	if r.stickyErr != nil {
+		return 0, r.stickyErr
+	}
 	r.onceHeader.Do(r.readHeader)
 	if r.headerErr != nil {
+		r.stickyErr = r.headerErr
 		return 0, r.headerErr
 	}
 	for {
@@ -71,10 +78,12 @@ func (r *Reader) Read(p []byte) (n int, err error) {
 				return plainLen, nil
 			}
 			if rerr != nil {
+				r.stickyErr = rerr
 				return 0, rerr
 			}
 		}
 		if err = r.readNextChunk(); err != nil {
+			r.stickyErr = err
 			return 0, err
 		}
 	}

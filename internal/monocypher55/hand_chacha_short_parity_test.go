@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package monocypher55
 
 import (
@@ -62,7 +64,11 @@ func TestDeriv2SIMDParity(t *testing.T) {
 }
 
 // refFastPathWrite rejoue le fast-path AEAD court avec les seules primitives
-// scalaires (comportement d'avant vectorisation) : oracle de parité complet.
+// scalaires : oracle de parité complet. Sémantique d'état alignée sur le C
+// monocypher 4.0.2 (`crypto_aead_write`) : la clé est ratchetée
+// (`auth_key[32:64]`), le compteur reste inchangé. L'ancienne référence
+// (avant 2026-08-26) avançait le compteur de 1 ou 2 : elle figeait une
+// divergence vis-à-vis de l'oracle C, prouvée par TestAEADStream_VsMonocypherC.
 func refFastPathWrite(ctx *Crypto_aead_ctx, cipher, mac, ad, plain []byte) {
 	var buf [128]byte
 	derivSize := uint64(64)
@@ -73,13 +79,8 @@ func refFastPathWrite(ctx *Crypto_aead_ctx, cipher, mac, ad, plain []byte) {
 	for i := range plain {
 		cipher[i] = plain[i] ^ buf[64+i]
 	}
-	Lock_auth(mac, buf[:32], ad, uint64(len(ad)), cipher, uint64(len(plain)))
+	lock_auth(mac, buf[:32], ad, uint64(len(ad)), cipher, uint64(len(plain)))
 	copy(ctx.Key[:], buf[32:64])
-	if len(plain) > 0 {
-		ctx.Counter += 2
-	} else {
-		ctx.Counter += 1
-	}
 }
 
 // TestAEADShortSIMDvsScalarAllSizes couvre TOUTES les tailles 0..64 avec nonces

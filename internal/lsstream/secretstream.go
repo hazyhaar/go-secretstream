@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Modified in the lateos-ai/wal-g fork. Pure-Go crypto_secretstream_xchacha20poly1305.
 // Bit-compatible with libsodium secretstream_xchacha20poly1305.c (manual
 // ChaCha20-IETF + Poly1305 construction, not AEAD Seal of padded message).
@@ -11,8 +13,8 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/hazyhaar/go-secretstream/internal/monocypher55"
 	"golang.org/x/crypto/chacha20"
-	"golang.org/x/crypto/poly1305"
 )
 
 const (
@@ -108,7 +110,7 @@ func (st *streamState) chacha(ic uint32) (*chacha20.Cipher, error) {
 	return st.cipher, nil
 }
 
-func (st *streamState) advance(mac []byte) error {
+func (st *streamState) advance(mac []byte) (wrapped bool, err error) {
 	for i := 0; i < inonceBytes; i++ {
 		st.nonce[counterBytes+i] ^= mac[i]
 	}
@@ -120,20 +122,16 @@ func (st *streamState) advance(mac []byte) error {
 		}
 	}
 	if err := st.initCipher(); err != nil {
-		return err
+		return false, err
 	}
-	// rekey if counter wrapped to zero OR caller checks tag
-	zero := true
+	wrapped = true
 	for i := 0; i < counterBytes; i++ {
 		if st.nonce[i] != 0 {
-			zero = false
+			wrapped = false
 			break
 		}
 	}
-	if zero {
-		return st.rekey()
-	}
-	return nil
+	return wrapped, nil
 }
 
 func (st *streamState) rekey() error {
@@ -212,47 +210,55 @@ func (st *streamState) pushTo(m []byte, tag byte, wire []byte) (int, error) {
 	copy(polyKey[:], polyBlock[:32])
 	memzero(polyBlock[:])
 
-	mac := poly1305.New(&polyKey)
+	var polyCtx monocypher55.Crypto_poly1305_ctx
+	monocypher55.Crypto_poly1305_init(&polyCtx, polyKey[:])
 	if pad := sodiumPad(0); pad > 0 {
 		var zeros [16]byte
-		_, _ = mac.Write(zeros[:pad])
+		monocypher55.Crypto_poly1305_update(&polyCtx, zeros[:pad], uint64(pad))
 	}
 
 	// block = tag||zeros, xor with chacha (counter moves to 1); auth full 64-byte block
 	var block [64]byte
 	block[0] = tag
 	c.XORKeyStream(block[:], block[:])
-	_, _ = mac.Write(block[:])
+	monocypher55.Crypto_poly1305_update(&polyCtx, block[:], uint64(len(block)))
 	out0 := block[0]
 
 	// encrypt message with chacha (counter moves to 2..) directly into wire[1:1+len(m)]
 	ciph := wire[1 : 1+len(m)]
 	if len(m) > 0 {
 		c.XORKeyStream(ciph, m)
-		_, _ = mac.Write(ciph)
+		monocypher55.Crypto_poly1305_update(&polyCtx, ciph, uint64(len(ciph)))
 	}
 	if pad := sodiumPadBlockMlen(len(m)); pad > 0 {
 		var zeros [16]byte
-		_, _ = mac.Write(zeros[:pad])
+		monocypher55.Crypto_poly1305_update(&polyCtx, zeros[:pad], uint64(pad))
 	}
 
 	var slen [16]byte
 	binary.LittleEndian.PutUint64(slen[0:8], 0)
 	binary.LittleEndian.PutUint64(slen[8:16], uint64(64+len(m)))
-	_, _ = mac.Write(slen[:])
+	monocypher55.Crypto_poly1305_update(&polyCtx, slen[:], uint64(len(slen)))
 
 	var tagOut [16]byte
-	mac.Sum(tagOut[:0])
+	monocypher55.Crypto_poly1305_final(&polyCtx, tagOut[:])
+	clear(polyCtx.C[:])
+	clear(polyCtx.R[:])
+	clear(polyCtx.Pad[:])
+	clear(polyCtx.H[:])
+	polyCtx.C_idx = 0
+	runtime.KeepAlive(&polyCtx)
 	memzero(polyKey[:])
 	memzero(block[:])
 
 	wire[0] = out0
 	copy(wire[1+len(m):], tagOut[:])
 
-	if err := st.advance(tagOut[:]); err != nil {
+	wrapped, err := st.advance(tagOut[:])
+	if err != nil {
 		return 0, err
 	}
-	if tag&TagRekey != 0 {
+	if tag&TagRekey != 0 || wrapped {
 		if err := st.rekey(); err != nil {
 			return 0, err
 		}
@@ -295,10 +301,11 @@ func (st *streamState) pullTo(wire []byte, dst []byte) (n int, tag byte, err err
 	copy(polyKey[:], polyBlock[:32])
 	memzero(polyBlock[:])
 
-	mac := poly1305.New(&polyKey)
+	var polyCtx monocypher55.Crypto_poly1305_ctx
+	monocypher55.Crypto_poly1305_init(&polyCtx, polyKey[:])
 	if pad := sodiumPad(0); pad > 0 {
 		var zeros [16]byte
-		_, _ = mac.Write(zeros[:pad])
+		monocypher55.Crypto_poly1305_update(&polyCtx, zeros[:pad], uint64(pad))
 	}
 
 	var block [64]byte
@@ -306,22 +313,28 @@ func (st *streamState) pullTo(wire []byte, dst []byte) (n int, tag byte, err err
 	c.XORKeyStream(block[:], block[:])
 	tag = block[0]
 	block[0] = wire[0] // auth uses ciphertext byte, not decrypted tag — libsodium C order, do not change
-	_, _ = mac.Write(block[:])
+	monocypher55.Crypto_poly1305_update(&polyCtx, block[:], uint64(len(block)))
 	if mlen > 0 {
-		_, _ = mac.Write(ciph)
+		monocypher55.Crypto_poly1305_update(&polyCtx, ciph, uint64(len(ciph)))
 	}
 	if pad := sodiumPadBlockMlen(mlen); pad > 0 {
 		var zeros [16]byte
-		_, _ = mac.Write(zeros[:pad])
+		monocypher55.Crypto_poly1305_update(&polyCtx, zeros[:pad], uint64(pad))
 	}
 
 	var slen [16]byte
 	binary.LittleEndian.PutUint64(slen[0:8], 0)
 	binary.LittleEndian.PutUint64(slen[8:16], uint64(64+mlen))
-	_, _ = mac.Write(slen[:])
+	monocypher55.Crypto_poly1305_update(&polyCtx, slen[:], uint64(len(slen)))
 
 	var computed [16]byte
-	mac.Sum(computed[:0])
+	monocypher55.Crypto_poly1305_final(&polyCtx, computed[:])
+	clear(polyCtx.C[:])
+	clear(polyCtx.R[:])
+	clear(polyCtx.Pad[:])
+	clear(polyCtx.H[:])
+	polyCtx.C_idx = 0
+	runtime.KeepAlive(&polyCtx)
 	memzero(polyKey[:])
 	memzero(block[:])
 	if subtle.ConstantTimeCompare(computed[:], storedMAC) != 1 {
@@ -334,14 +347,14 @@ func (st *streamState) pullTo(wire []byte, dst []byte) (n int, tag byte, err err
 
 	// Advance only after MAC success so a failed pull leaves state coherent
 	// for diagnostics; Reader always abandons on error.
-	if err := st.advance(storedMAC); err != nil {
+	wrapped, err := st.advance(storedMAC)
+	if err != nil {
 		return 0, 0, err
 	}
-	if tag&TagRekey != 0 {
+	if tag&TagRekey != 0 || wrapped {
 		if err := st.rekey(); err != nil {
 			return 0, 0, err
 		}
 	}
 	return mlen, tag, nil
 }
-

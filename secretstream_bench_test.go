@@ -1,5 +1,7 @@
 //go:build goexperiment.simd
 
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package secretstream55_test
 
 import (
@@ -8,7 +10,6 @@ import (
 	"io"
 	"testing"
 
-	"code.hazyhaar.fr/devhoros/c2simd"
 	"github.com/hazyhaar/go-secretstream"
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -101,29 +102,6 @@ func BenchmarkSecretStream55_FullDuplex_1MB(b *testing.B) {
 			b.Fatal(err)
 		}
 		_, err = io.ReadFull(dec, plainDst)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkC2SIMD_Engine_1MB(b *testing.B) {
-	key := make([]byte, 32)
-	nonce := make([]byte, 24)
-	ad := []byte("ad_header")
-	payload := make([]byte, 1024*1024)
-	rand.Read(key)
-	rand.Read(nonce)
-	rand.Read(payload)
-
-	dstBuf := make([]byte, 1024*1024)
-	var mac [16]byte
-
-	b.SetBytes(int64(len(payload)))
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		_, err := c2simd.AEADLockDst(dstBuf, &mac, key, nonce, ad, payload)
 		if err != nil {
 			b.Fatal(err)
 		}

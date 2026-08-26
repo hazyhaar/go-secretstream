@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package monocypher55
 
 import "unsafe"
@@ -35,25 +37,25 @@ func Crypto_argon2(hash []byte, hash_size uint32, work_area []byte, config Crypt
 		var initial_hash [72]byte
 		var ctx Crypto_blake2b_ctx
 		Crypto_blake2b_init(&ctx, 64)
-		Blake_update_32(&ctx, config.Nb_lanes)
-		Blake_update_32(&ctx, hash_size)
-		Blake_update_32(&ctx, config.Nb_blocks)
-		Blake_update_32(&ctx, config.Nb_passes)
-		Blake_update_32(&ctx, 0x13)
-		Blake_update_32(&ctx, config.Algorithm)
-		Blake_update_32_buf(&ctx, inputs.Pass, inputs.Pass_size)
-		Blake_update_32_buf(&ctx, inputs.Salt, inputs.Salt_size)
-		Blake_update_32_buf(&ctx, extras.Key, extras.Key_size)
-		Blake_update_32_buf(&ctx, extras.Ad, extras.Ad_size)
+		blake_update_32(&ctx, config.Nb_lanes)
+		blake_update_32(&ctx, hash_size)
+		blake_update_32(&ctx, config.Nb_blocks)
+		blake_update_32(&ctx, config.Nb_passes)
+		blake_update_32(&ctx, 0x13)
+		blake_update_32(&ctx, config.Algorithm)
+		blake_update_32_buf(&ctx, inputs.Pass, inputs.Pass_size)
+		blake_update_32_buf(&ctx, inputs.Salt, inputs.Salt_size)
+		blake_update_32_buf(&ctx, extras.Key, extras.Key_size)
+		blake_update_32_buf(&ctx, extras.Ad, extras.Ad_size)
 		Crypto_blake2b_final(&ctx, initial_hash[:])
 
 		var hash_area [1024]byte
 		for l := uint32(0); l < config.Nb_lanes; l++ {
 			for i := uint32(0); i < 2; i++ {
-				Store32_le(initial_hash[64:], i)
-				Store32_le(initial_hash[68:], l)
-				Extended_hash(hash_area[:], 1024, initial_hash[:], 72)
-				Load64_le_buf(blocks[l*lane_size+i].A[:], hash_area[:], 128)
+				store32_le(initial_hash[64:], i)
+				store32_le(initial_hash[68:], l)
+				extended_hash(hash_area[:], 1024, initial_hash[:], 72)
+				load64_le_buf(blocks[l*lane_size+i].A[:], hash_area[:], 128)
 			}
 		}
 		for i := range initial_hash {
@@ -104,12 +106,12 @@ func Crypto_argon2(hash []byte, hash_size uint32, work_area []byte, config Crypt
 							index_block.A[5] = uint64(config.Algorithm)
 							index_block.A[6] = uint64(index_ctr)
 							index_ctr++
-							Copy_block(&tmp, &index_block)
-							G_rounds(&index_block)
-							Xor_block(&index_block, &tmp)
-							Copy_block(&tmp, &index_block)
-							G_rounds(&index_block)
-							Xor_block(&index_block, &tmp)
+							copy_block(&tmp, &index_block)
+							g_rounds(&index_block)
+							xor_block(&index_block, &tmp)
+							copy_block(&tmp, &index_block)
+							g_rounds(&index_block)
+							xor_block(&index_block, &tmp)
 						}
 						index_seed = index_block.A[block%128]
 					} else {
@@ -145,15 +147,15 @@ func Crypto_argon2(hash []byte, hash_size uint32, work_area []byte, config Crypt
 					ref := (uint64(window_start) + z) % uint64(lane_size)
 					index := uint32(lane)*lane_size + uint32(ref)
 
-					Copy_block(&tmp, &blocks[prevIdx])
-					Xor_block(&tmp, &blocks[index])
+					copy_block(&tmp, &blocks[prevIdx])
+					xor_block(&tmp, &blocks[index])
 					if pass == 0 {
-						Copy_block(&blocks[curIdx], &tmp)
+						copy_block(&blocks[curIdx], &tmp)
 					} else {
-						Xor_block(&blocks[curIdx], &tmp)
+						xor_block(&blocks[curIdx], &tmp)
 					}
-					G_rounds(&tmp)
-					Xor_block(&blocks[curIdx], &tmp)
+					g_rounds(&tmp)
+					xor_block(&blocks[curIdx], &tmp)
 				}
 			}
 		}
@@ -166,19 +168,19 @@ func Crypto_argon2(hash []byte, hash_size uint32, work_area []byte, config Crypt
 	last := int(lane_size - 1)
 	for lane := uint32(1); lane < config.Nb_lanes; lane++ {
 		next := last + int(lane_size)
-		Xor_block(&blocks[next], &blocks[last])
+		xor_block(&blocks[next], &blocks[last])
 		last = next
 	}
 
 	var final_block [1024]byte
-	Store64_le_buf(final_block[:], blocks[last].A[:], 128)
+	store64_le_buf(final_block[:], blocks[last].A[:], 128)
 
 	// wipe work_area (blocks overlay)
 	for i := range work_area[:need] {
 		work_area[i] = 0
 	}
 
-	Extended_hash(hash, hash_size, final_block[:], 1024)
+	extended_hash(hash, hash_size, final_block[:], 1024)
 	for i := range final_block {
 		final_block[i] = 0
 	}

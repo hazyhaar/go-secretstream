@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package secretstream55
 
 import (
@@ -8,40 +10,47 @@ import (
 	"github.com/hazyhaar/go-secretstream/internal/engine"
 )
 
-// oldPathStream reconstruit le flux maison par le chemin HISTORIQUE : un appel
-// XChaCha20-Poly1305 complet (nonce 24 octets, HChaCha20 recalculée) par chunk.
+// oldPathStream reconstruit le flux maison v2 à partir des primitives,
+// indépendamment de Encryptor : en-tête versionné, nonce de trame
+// nonce[16:20]||seq_be64, AD v2, trame avec tag, bloc TagFinal.
 func oldPathStream(t *testing.T, eng engine.AEAD, key []byte, nonce [24]byte, payload []byte) []byte {
 	t.Helper()
 	var out bytes.Buffer
-	out.Write(nonce[:])
+	var hdr [HeaderSize]byte
+	writeHeaderV2(hdr[:], &nonce)
+	out.Write(hdr[:])
+
+	var subkey [32]byte
+	eng.HChaCha20(subkey[:], key, nonce[0:16])
 	seq := uint64(0)
-	baseSeq := binary.BigEndian.Uint64(nonce[16:24])
+	seal := func(chunk []byte, tag byte) {
+		t.Helper()
+		n12 := frameNonceV2(&nonce, seq)
+		var prefix [adPrefixV2Len]byte
+		var ext []byte
+		ad := bindChunkADv2(&prefix, &ext, seq, tag, nil)
+		cipher := make([]byte, len(chunk))
+		var mac [16]byte
+		if err := eng.LockSubkeyDst(cipher, &mac, subkey[:], n12[:], ad, chunk); err != nil {
+			t.Fatalf("old path LockSubkeyDst: %v", err)
+		}
+		var lenBuf [4]byte
+		binary.BigEndian.PutUint32(lenBuf[:], uint32(1+len(chunk)+16))
+		out.Write(lenBuf[:])
+		out.Write([]byte{tag})
+		out.Write(cipher)
+		out.Write(mac[:])
+		seq++
+	}
 	for len(payload) > 0 {
 		chunkLen := len(payload)
 		if chunkLen > ChunkSize {
 			chunkLen = ChunkSize
 		}
-		chunk := payload[:chunkLen]
+		seal(payload[:chunkLen], TagMessage)
 		payload = payload[chunkLen:]
-
-		var chunkNonce [24]byte
-		copy(chunkNonce[:], nonce[:])
-		binary.BigEndian.PutUint64(chunkNonce[16:24], baseSeq^seq)
-		var ad [8]byte
-		binary.BigEndian.PutUint64(ad[:], seq)
-		seq++
-
-		cipher := make([]byte, chunkLen)
-		var mac [16]byte
-		if err := eng.LockDst(cipher, &mac, key, chunkNonce[:], ad[:], chunk); err != nil {
-			t.Fatalf("old path LockDst: %v", err)
-		}
-		var lenBuf [4]byte
-		binary.BigEndian.PutUint32(lenBuf[:], uint32(chunkLen+16))
-		out.Write(lenBuf[:])
-		out.Write(cipher)
-		out.Write(mac[:])
 	}
+	seal(nil, TagFinal)
 	return out.Bytes()
 }
 
@@ -70,11 +79,13 @@ func TestSubkeyStream_ByteExact_VsOldPath(t *testing.T) {
 		if _, err := enc.Write(payload); err != nil {
 			t.Fatalf("n=%d: Write: %v", n, err)
 		}
+		if err := enc.Close(); err != nil {
+			t.Fatalf("n=%d: Close: %v", n, err)
+		}
 
-		// Nonce fixé par lecture de l'en-tête réellement émis : les deux
-		// chemins travaillent sous exactement la même clé et le même nonce.
+		// Nonce fixé par lecture de l'en-tête v2 réellement émis (octets 12..36).
 		var nonce [24]byte
-		copy(nonce[:], newStream.Bytes()[:HeaderSize])
+		copy(nonce[:], newStream.Bytes()[12:12+24])
 
 		oldStream := oldPathStream(t, eng, key, nonce, payload)
 

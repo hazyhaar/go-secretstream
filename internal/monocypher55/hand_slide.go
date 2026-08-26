@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package monocypher55
 
 // Hand overrides — survive regen of monocypher_aead_sgoiter.go (sgoiter emit gaps).
@@ -11,7 +13,7 @@ type Slide_ctx struct {
 
 func Slide_init(ctx *Slide_ctx, scalar []byte) {
 	i := 252
-	for i > 0 && Scalar_bit(scalar, i) == 0 {
+	for i > 0 && scalar_bit(scalar, i) == 0 {
 		i--
 	}
 	ctx.Next_check = uint8(i + 1)
@@ -23,18 +25,18 @@ func Slide_init(ctx *Slide_ctx, scalar []byte) {
 
 func Slide_step(ctx *Slide_ctx, width int, i int, scalar []byte) int {
 	if i == int(ctx.Next_check) {
-		if Scalar_bit(scalar, i) == Scalar_bit(scalar, i-1) {
+		if scalar_bit(scalar, i) == scalar_bit(scalar, i-1) {
 			ctx.Next_check--
 		} else {
 			w := width
 			if i+1 < w {
 				w = i + 1
 			}
-			v := -(Scalar_bit(scalar, i) << (w - 1))
+			v := -(scalar_bit(scalar, i) << (w - 1))
 			for j := 0; j < w-1; j++ {
-				v += Scalar_bit(scalar, i-(w-1)+j) << j
+				v += scalar_bit(scalar, i-(w-1)+j) << j
 			}
-			v += Scalar_bit(scalar, i-w)
+			v += scalar_bit(scalar, i-w)
 			lsb := v & (^v + 1)
 			s := 0
 			if lsb&0xAA != 0 {

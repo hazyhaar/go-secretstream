@@ -1,5 +1,7 @@
 //go:build sgoiter_oracle
 
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package secretstream55_test
 
 // Tests optionnels : comparer monocypher_sgoiter à monocypher ccgo

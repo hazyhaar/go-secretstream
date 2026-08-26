@@ -1,5 +1,7 @@
 //go:build !goexperiment.simd || !amd64
 
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package monocypher55
 
 // Stubs de repli : jamais appelés, tout site d'appel est gardé par hasAVX2()

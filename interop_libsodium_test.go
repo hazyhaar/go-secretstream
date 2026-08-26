@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package secretstream55_test
 
 import (
@@ -38,10 +40,10 @@ func goldenDir(t *testing.T) string {
 }
 
 type goldenEntry struct {
-	ID           string `json:"id"`
-	Bytes        int    `json:"bytes"`
-	SHA256Plain  string `json:"sha256_plain"`
-	SHA256Wire   string `json:"sha256_wire"`
+	ID          string `json:"id"`
+	Bytes       int    `json:"bytes"`
+	SHA256Plain string `json:"sha256_plain"`
+	SHA256Wire  string `json:"sha256_wire"`
 }
 
 func loadManifest(t *testing.T) []goldenEntry {

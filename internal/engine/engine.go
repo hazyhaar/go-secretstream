@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 // Package engine abstracts AEAD backends for the maison (non-libsodium-wire) stream.
 package engine
 

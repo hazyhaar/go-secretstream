@@ -1,13 +1,32 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 // Package monocypher_sgoiter re-exports monocypher55 (compat path for engine tag aead_sgoiter).
 package monocypher_sgoiter
 
 import (
 	"errors"
+	"unsafe"
 
 	mono "github.com/hazyhaar/go-secretstream/internal/monocypher55"
 )
 
 var ErrAEADCheckFailed = mono.ErrAEADCheckFailed
+
+func anyOverlap(x, y []byte) bool {
+	return len(x) > 0 && len(y) > 0 &&
+		uintptr(unsafe.Pointer(&x[0])) <= uintptr(unsafe.Pointer(&y[len(y)-1])) &&
+		uintptr(unsafe.Pointer(&y[0])) <= uintptr(unsafe.Pointer(&x[len(x)-1]))
+}
+
+func inexactOverlap(x, y []byte) bool {
+	if len(x) == 0 || len(y) == 0 {
+		return false
+	}
+	if &x[0] == &y[0] {
+		return len(x) != len(y)
+	}
+	return anyOverlap(x, y)
+}
 
 func AEADLock(key, nonce, ad, plain []byte) (cipher, mac []byte, err error) {
 	return mono.AEADLock(key, nonce, ad, plain)
@@ -46,6 +65,12 @@ func LockSubkeyDst(dstCT, mac, subkey, nonce12, ad, plain []byte) error {
 	if len(dstCT) < len(plain) {
 		return errors.New("monocypher_sgoiter: dstCT shorter than plaintext")
 	}
+	if inexactOverlap(dstCT[:len(plain)], plain) {
+		panic("monocypher_sgoiter: invalid buffer overlap between dstCT and plain")
+	}
+	if anyOverlap(dstCT[:len(plain)], ad) {
+		panic("monocypher_sgoiter: invalid buffer overlap between dstCT and ad")
+	}
 	var ctx mono.Crypto_aead_ctx
 	mono.Crypto_aead_init_ietf(&ctx, subkey, nonce12)
 	adPtr, ptPtr := aeadPtrs(ad, plain)
@@ -66,6 +91,12 @@ func UnlockSubkeyDst(dstPT, subkey, nonce12, mac, ad, cipher []byte) error {
 	}
 	if len(dstPT) < len(cipher) {
 		return errors.New("monocypher_sgoiter: dstPT shorter than ciphertext")
+	}
+	if inexactOverlap(dstPT[:len(cipher)], cipher) {
+		panic("monocypher_sgoiter: invalid buffer overlap between dstPT and cipher")
+	}
+	if anyOverlap(dstPT[:len(cipher)], ad) {
+		panic("monocypher_sgoiter: invalid buffer overlap between dstPT and ad")
 	}
 	var ctx mono.Crypto_aead_ctx
 	mono.Crypto_aead_init_ietf(&ctx, subkey, nonce12)

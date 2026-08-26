@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package monocypher55
 
 // Hand: Crypto_chacha20_djb — accéléré en SIMD 4-blocks (archsimd.Uint32x8) sous Go 1.27 avec fallback scalaire.
@@ -15,9 +17,9 @@ func Crypto_chacha20_djb(cipher_text []byte, plain_text []byte, text_size uint64
 	v8 = v6
 	var _arr_v12 [16]uint32
 	v12 := _arr_v12[:]
-	Load32_le_buf(v12, chacha20_constant, uint64(4))
-	Load32_le_buf(v12[4:], key, uint64(8))
-	Load32_le_buf(v12[14:], nonce, uint64(2))
+	load32_le_buf(v12, Chacha20_constant, uint64(4))
+	load32_le_buf(v12[4:], key, uint64(8))
+	load32_le_buf(v12[14:], nonce, uint64(2))
 	v12[12] = uint32(ctr)
 	v12[13] = uint32(ctr >> 32)
 	var _arr_v31 [16]uint32
@@ -66,11 +68,11 @@ func Crypto_chacha20_djb(cipher_text []byte, plain_text []byte, text_size uint64
 	}
 
 	for v35 < v34 {
-		Chacha20_rounds(v31, v12)
+		chacha20_rounds(v31, v12)
 		if plain_text != nil {
 			v41 = 0
 			for v41 < 16 {
-				Store32_le(cipher_text[int(v6):], ((v31[int(v41)] + v12[int(v41)]) ^ Load32_le(plain_text[int(v8):])))
+				store32_le(cipher_text[int(v6):], ((v31[int(v41)] + v12[int(v41)]) ^ load32_le(plain_text[int(v8):])))
 				v6 = v6 + 4
 				v8 = v8 + 4
 				v41 = v41 + 1
@@ -78,7 +80,7 @@ func Crypto_chacha20_djb(cipher_text []byte, plain_text []byte, text_size uint64
 		} else {
 			v59 = 0
 			for v59 < 16 {
-				Store32_le(cipher_text[int(v6):], (v31[int(v59)] + v12[int(v59)]))
+				store32_le(cipher_text[int(v6):], (v31[int(v59)] + v12[int(v59)]))
 				v6 = v6 + 4
 				v59 = v59 + 1
 			}
@@ -98,28 +100,34 @@ func Crypto_chacha20_djb(cipher_text []byte, plain_text []byte, text_size uint64
 	text_size = text_size & 63
 	if text_size > 0 {
 		if plain_text == nil {
-			plain_text = zero
+			plain_text = Zero[:]
 		}
-		Chacha20_rounds(v31, v12)
+		chacha20_rounds(v31, v12)
 		var _arr_v90 [64]byte
 		v90 := _arr_v90[:]
 		v91 = 0
 		for v91 < 16 {
-			Store32_le(v90[int(v91 * 4):], (v31[int(v91)] + v12[int(v91)]))
+			store32_le(v90[int(v91*4):], (v31[int(v91)] + v12[int(v91)]))
 			v91 = v91 + 1
 		}
 		v104 = 0
 		for v104 < text_size {
-			cipher_text[int(v6 + v104)] = v90[int(v104)] ^ plain_text[int(v8 + v104)]
+			cipher_text[int(v6+v104)] = v90[int(v104)] ^ plain_text[int(v8+v104)]
 			v104 = v104 + 1
 		}
-		for _i := range v90 { v90[_i] = 0 }
+		for _i := range v90 {
+			v90[_i] = 0
+		}
 	}
 	resCtr := (uint64(v12[12]) | (uint64(v12[13]) << 32))
 	if text_size > 0 {
 		resCtr++
 	}
-	for _i := range v12 { v12[_i] = 0 }
-	for _i := range v31 { v31[_i] = 0 }
+	for _i := range v12 {
+		v12[_i] = 0
+	}
+	for _i := range v31 {
+		v31[_i] = 0
+	}
 	return resCtr
 }

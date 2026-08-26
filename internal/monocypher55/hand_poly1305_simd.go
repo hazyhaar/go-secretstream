@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package monocypher55
 
 import (
@@ -77,6 +79,11 @@ func Poly_blocks(ctx *Crypto_poly1305_ctx, in []byte, nb_blocks uint64, end uint
 		h0, c = bits.Add64(h0, c_lo, 0)
 		h1, c = bits.Add64(h1, c_hi, c)
 		h2 += c
+		if h2 > 3 {
+			h0, c = bits.Add64(h0, (h2>>2)*5, 0)
+			h1, c = bits.Add64(h1, 0, c)
+			h2 = (h2 & 3) + c
+		}
 	}
 
 	ctx.H[0] = uint32(h0)

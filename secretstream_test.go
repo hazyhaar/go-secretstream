@@ -1,12 +1,15 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package secretstream55_test
 
 import (
 	"bytes"
 	"crypto/rand"
 	"io"
+	"strings"
 	"testing"
 
-	"github.com/hazyhaar/go-secretstream"
+	secretstream55 "github.com/hazyhaar/go-secretstream"
 )
 
 func TestSecretStreamRoundtrip(t *testing.T) {
@@ -24,6 +27,9 @@ func TestSecretStreamRoundtrip(t *testing.T) {
 	if _, err := enc.Write(payload); err != nil {
 		t.Fatalf("enc.Write failed: %v", err)
 	}
+	if err := enc.Close(); err != nil {
+		t.Fatalf("enc.Close failed: %v", err)
+	}
 	dec, err := secretstream55.NewDecryptor(&encryptedBuf, key)
 	if err != nil {
 		t.Fatalf("NewDecryptor failed: %v", err)
@@ -34,6 +40,26 @@ func TestSecretStreamRoundtrip(t *testing.T) {
 	}
 	if !bytes.Equal(decrypted, payload) {
 		t.Fatalf("Decrypted stream mismatch!\nExpected: %q\nGot:      %q", payload, decrypted)
+	}
+
+	var truncated bytes.Buffer
+	enc2, err := secretstream55.NewEncryptor(&truncated, key)
+	if err != nil {
+		t.Fatalf("NewEncryptor (sans Close): %v", err)
+	}
+	if _, err := enc2.Write(payload); err != nil {
+		t.Fatalf("Write (sans Close): %v", err)
+	}
+	dec2, err := secretstream55.NewDecryptor(bytes.NewReader(truncated.Bytes()), key)
+	if err != nil {
+		t.Fatalf("NewDecryptor (sans Close): %v", err)
+	}
+	_, err = io.ReadAll(dec2)
+	if err == nil || err == io.EOF {
+		t.Fatalf("sans Close: attendu flux tronqué, obtenu %v", err)
+	}
+	if !strings.Contains(err.Error(), "flux tronqué") {
+		t.Fatalf("sans Close: attendu flux tronqué, obtenu %v", err)
 	}
 }
 
@@ -147,9 +173,9 @@ func TestSecretStream_AntiDoS_ExcessiveFrameLength(t *testing.T) {
 
 	// Construction d'un flux malicieux : Header valide de 24 octets suivi d'un chunkLen forgé de 2 Gio (0x7fffffff)
 	var malicious bytes.Buffer
-	malicious.Write(bytes.Repeat([]byte{0x42}, 24))                               // Header nonce
-	malicious.Write([]byte{0x7f, 0xff, 0xff, 0xff})                               // 2 Gio
-	malicious.Write(bytes.Repeat([]byte{0x00}, 100))                              // Début payload
+	malicious.Write(bytes.Repeat([]byte{0x42}, 24))  // Header nonce
+	malicious.Write([]byte{0x7f, 0xff, 0xff, 0xff})  // 2 Gio
+	malicious.Write(bytes.Repeat([]byte{0x00}, 100)) // Début payload
 
 	dec, err := secretstream55.NewDecryptor(&malicious, key)
 	if err != nil {
@@ -192,4 +218,3 @@ func TestSecretStream_ShortWriteDetected(t *testing.T) {
 		t.Fatal("attendu erreur sur short write non détecté, obtenu nil")
 	}
 }
-

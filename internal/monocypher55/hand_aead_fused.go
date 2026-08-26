@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package monocypher55
 
 // xorStreamShort masque dst = src XOR ks sur n octets (n <= 64), par mots de
@@ -9,7 +11,7 @@ func xorStreamShort(dst []byte, src []byte, ks []byte, n uint64) {
 	}
 	i := uint64(0)
 	for ; i+8 <= n; i += 8 {
-		Store64_le(dst[i:], Load64_le(src[i:])^Load64_le(ks[i:]))
+		store64_le(dst[i:], load64_le(src[i:])^load64_le(ks[i:]))
 	}
 	for ; i < n; i++ {
 		dst[i] = src[i] ^ ks[i]
@@ -44,31 +46,25 @@ func Crypto_aead_write(ctx *Crypto_aead_ctx, cipher_text []byte, mac []byte, ad 
 		Crypto_poly1305_init(&polyCtx, buf[:64])
 		if ad_size > 0 {
 			Crypto_poly1305_update(&polyCtx, ad, ad_size)
-			if gap := Gap(ad_size, 16); gap > 0 {
-				Crypto_poly1305_update(&polyCtx, zero, gap)
+			if gap := gap(ad_size, 16); gap > 0 {
+				Crypto_poly1305_update(&polyCtx, Zero[:], gap)
 			}
 		}
 		if text_size > 0 {
 			Crypto_poly1305_update(&polyCtx, cipher_text[:text_size], text_size)
-			if gapText := Gap(text_size, 16); gapText > 0 {
-				Crypto_poly1305_update(&polyCtx, zero, gapText)
+			if gapText := gap(text_size, 16); gapText > 0 {
+				Crypto_poly1305_update(&polyCtx, Zero[:], gapText)
 			}
 		}
 		var _arr_sizes [16]uint8
 		sizes := _arr_sizes[:]
-		Store64_le(sizes, ad_size)
-		Store64_le(sizes[8:], text_size)
+		store64_le(sizes, ad_size)
+		store64_le(sizes[8:], text_size)
 		Crypto_poly1305_update(&polyCtx, sizes, 16)
 		Crypto_poly1305_final(&polyCtx, mac)
 
-		// Rekeying et avancement du compteur
 		for i := 0; i < 32; i++ {
 			ctx.Key[i] = buf[32+i]
-		}
-		if text_size > 0 {
-			ctx.Counter += 2
-		} else {
-			ctx.Counter += 1
 		}
 		clear(buf)
 		clear(sizes)
@@ -89,9 +85,9 @@ func Crypto_aead_write(ctx *Crypto_aead_ctx, cipher_text []byte, mac []byte, ad 
 	// 3. Absorption de l'Additional Data (AD) et de son alignement sur 16 octets
 	if ad_size > 0 {
 		Crypto_poly1305_update(&polyCtx, ad, ad_size)
-		gap := Gap(ad_size, uint64(16))
+		gap := gap(ad_size, uint64(16))
 		if gap > 0 {
-			Crypto_poly1305_update(&polyCtx, zero, gap)
+			Crypto_poly1305_update(&polyCtx, Zero[:], gap)
 		}
 	}
 
@@ -115,26 +111,24 @@ func Crypto_aead_write(ctx *Crypto_aead_ctx, cipher_text []byte, mac []byte, ad 
 	}
 
 	// 6. Alignement du ciphertext sur 16 octets
-	gapText := Gap(text_size, uint64(16))
+	gapText := gap(text_size, uint64(16))
 	if gapText > 0 {
-		Crypto_poly1305_update(&polyCtx, zero, gapText)
+		Crypto_poly1305_update(&polyCtx, Zero[:], gapText)
 	}
 
 	// 7. Absorption des tailles ad_size (8o) et text_size (8o) en Little Endian
 	var _arr_sizes [16]uint8
 	sizes := _arr_sizes[:]
-	Store64_le(sizes, ad_size)
-	Store64_le(sizes[8:], text_size)
+	store64_le(sizes, ad_size)
+	store64_le(sizes[8:], text_size)
 	Crypto_poly1305_update(&polyCtx, sizes, uint64(16))
 
 	// 8. Finalisation du tag MAC
 	Crypto_poly1305_final(&polyCtx, mac)
 
-	// 9. Mise à jour de la clé de contexte pour le rekeying et hygiène mémoire
 	for i := 0; i < 32; i++ {
 		ctx.Key[i] = v7[32+i]
 	}
-	ctx.Counter = currCtr
 	clear(v7)
 	clear(sizes)
 	polyCtx = Crypto_poly1305_ctx{}
@@ -163,20 +157,20 @@ func Crypto_aead_read(ctx *Crypto_aead_ctx, plain_text []byte, mac []byte, ad []
 		Crypto_poly1305_init(&polyCtx, buf[:64])
 		if ad_size > 0 {
 			Crypto_poly1305_update(&polyCtx, ad, ad_size)
-			if gap := Gap(ad_size, 16); gap > 0 {
-				Crypto_poly1305_update(&polyCtx, zero, gap)
+			if gap := gap(ad_size, 16); gap > 0 {
+				Crypto_poly1305_update(&polyCtx, Zero[:], gap)
 			}
 		}
 		if text_size > 0 {
 			Crypto_poly1305_update(&polyCtx, cipher_text[:text_size], text_size)
-			if gapText := Gap(text_size, 16); gapText > 0 {
-				Crypto_poly1305_update(&polyCtx, zero, gapText)
+			if gapText := gap(text_size, 16); gapText > 0 {
+				Crypto_poly1305_update(&polyCtx, Zero[:], gapText)
 			}
 		}
 		var _arr_sizes [16]uint8
 		sizes := _arr_sizes[:]
-		Store64_le(sizes, ad_size)
-		Store64_le(sizes[8:], text_size)
+		store64_le(sizes, ad_size)
+		store64_le(sizes[8:], text_size)
 		Crypto_poly1305_update(&polyCtx, sizes, 16)
 		var expectedMac [16]byte
 		Crypto_poly1305_final(&polyCtx, expectedMac[:])
@@ -188,11 +182,6 @@ func Crypto_aead_read(ctx *Crypto_aead_ctx, plain_text []byte, mac []byte, ad []
 				xorStreamShort(plain_text, cipher_text, buf[64:], text_size)
 			}
 			copy(ctx.Key[:], buf[32:64])
-			if text_size > 0 {
-				ctx.Counter += 2
-			} else {
-				ctx.Counter += 1
-			}
 		} else {
 			// WIPE-ON-FAILURE : effacement systématique du plaintext
 			if plain_text != nil && text_size > 0 {
@@ -220,8 +209,8 @@ func Crypto_aead_read(ctx *Crypto_aead_ctx, plain_text []byte, mac []byte, ad []
 	// 3. Absorption de l'Additional Data (AD)
 	if ad_size > 0 {
 		Crypto_poly1305_update(&polyCtx, ad, ad_size)
-		if gap := Gap(ad_size, uint64(16)); gap > 0 {
-			Crypto_poly1305_update(&polyCtx, zero, gap)
+		if gap := gap(ad_size, uint64(16)); gap > 0 {
+			Crypto_poly1305_update(&polyCtx, Zero[:], gap)
 		}
 	}
 
@@ -250,15 +239,15 @@ func Crypto_aead_read(ctx *Crypto_aead_ctx, plain_text []byte, mac []byte, ad []
 	}
 
 	// 6. Alignement du ciphertext sur 16 octets
-	if gapText := Gap(text_size, uint64(16)); gapText > 0 {
-		Crypto_poly1305_update(&polyCtx, zero, gapText)
+	if gapText := gap(text_size, uint64(16)); gapText > 0 {
+		Crypto_poly1305_update(&polyCtx, Zero[:], gapText)
 	}
 
 	// 7. Absorption des tailles
 	var _arr_sizes [16]uint8
 	sizes := _arr_sizes[:]
-	Store64_le(sizes, ad_size)
-	Store64_le(sizes[8:], text_size)
+	store64_le(sizes, ad_size)
+	store64_le(sizes[8:], text_size)
 	Crypto_poly1305_update(&polyCtx, sizes, uint64(16))
 
 	// 8. Calcul et vérification du tag MAC
@@ -267,11 +256,10 @@ func Crypto_aead_read(ctx *Crypto_aead_ctx, plain_text []byte, mac []byte, ad []
 	diff := Crypto_verify16(mac, expectedMac[:])
 
 	if diff == 0 {
-		// Tag authentique : mise à jour de la clé de rekeying et du compteur
+		// Tag authentique : ratchet de clé (compteur inchangé)
 		for i := 0; i < 32; i++ {
 			ctx.Key[i] = v7[32+i]
 		}
-		ctx.Counter = currCtr
 	} else {
 		// WIPE-ON-FAILURE : effacement complet du plaintext déchiffré spéculativement
 		if plain_text != nil && text_size > 0 {

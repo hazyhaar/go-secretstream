@@ -1,0 +1,67 @@
+{
+  "engine": "default",
+  "vectors": [
+    {
+      "name": "empty_close",
+      "key_hex": "515c4b7665101f0a3924d3decdf8e792818cbba655404f7a6914030e3d28d7c2",
+      "nonce_hex": "c3c4cdd6dfe0e9f2fbfc858e9798a1aab3b4bd464f505962",
+      "fragments_hex": [],
+      "ads_hex": [],
+      "header_hex": "535335352d76320000020000c3c4cdd6dfe0e9f2fbfc858e9798a1aab3b4bd464f505962",
+      "frames_hex": [
+        "0000001103041c90afff33213c8c957c6ca2f773b7"
+      ]
+    },
+    {
+      "name": "hello_no_ad",
+      "key_hex": "515c4b7665101f0a3924d3decdf8e792818cbba655404f7a6914030e3d28d7c2",
+      "nonce_hex": "c3c4cdd6dfe0e9f2fbfc858e9798a1aab3b4bd464f505962",
+      "fragments_hex": [
+        "68656c6c6f"
+      ],
+      "ads_hex": [
+        ""
+      ],
+      "header_hex": "535335352d76320000020000c3c4cdd6dfe0e9f2fbfc858e9798a1aab3b4bd464f505962",
+      "frames_hex": [
+        "00000016007bdba90cd1162f5d9f46146f70dfba397d80508bca",
+        "00000011034567bb3a2a1d97ca0cc544aaec6615ba"
+      ]
+    },
+    {
+      "name": "msg_with_ad",
+      "key_hex": "515c4b7665101f0a3924d3decdf8e792818cbba655404f7a6914030e3d28d7c2",
+      "nonce_hex": "c3c4cdd6dfe0e9f2fbfc858e9798a1aab3b4bd464f505962",
+      "fragments_hex": [
+        "032c557ea7d0f9224b749dc6ef18416a93bce50e376089b2db042d567fa8d1fa234c759ec7f019426b94bde60f38618ab3dc052e5780a9d2fb244d769fc8f11a"
+      ],
+      "ads_hex": [
+        "626f756e64"
+      ],
+      "header_hex": "535335352d76320000020000c3c4cdd6dfe0e9f2fbfc858e9798a1aab3b4bd464f505962",
+      "frames_hex": [
+        "00000051001092901e19ff4d0d26eeb66ffec3842037b9f35916653b427d0987876a07f708b0204f63d12b4e9d3708bebfb9b3d6b7d521b0baae328c7f8a0e090ce1c875e4f76e62586779cc30e6905d65c21ddad7",
+        "00000011034567bb3a2a1d97ca0cc544aaec6615ba"
+      ]
+    },
+    {
+      "name": "two_frags_distinct_ad",
+      "key_hex": "515c4b7665101f0a3924d3decdf8e792818cbba655404f7a6914030e3d28d7c2",
+      "nonce_hex": "c3c4cdd6dfe0e9f2fbfc858e9798a1aab3b4bd464f505962",
+      "fragments_hex": [
+        "616c706861",
+        "62657461"
+      ],
+      "ads_hex": [
+        "78",
+        "79"
+      ],
+      "header_hex": "535335352d76320000020000c3c4cdd6dfe0e9f2fbfc858e9798a1aab3b4bd464f505962",
+      "frames_hex": [
+        "000000160072d2b508dfd3b4cab0d4c22c4fad79afb1275b787f",
+        "0000001500c981d3ff4da6d22cb1af595c46aae297fa1c6c83",
+        "0000001103d8d8ef2ef88a2e771bf3fd71ef82f34f"
+      ]
+    }
+  ]
+}

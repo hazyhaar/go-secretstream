@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Pure-Go libsodium secretstream writer (ported from wal-g fork, Apache-2.0).
 package lsstream
 
@@ -19,6 +21,7 @@ type Writer struct {
 	onceHeader sync.Once
 	key        []byte
 	headerErr  error
+	stickyErr  error
 	closed     bool
 	closeErr   error
 }
@@ -59,13 +62,18 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 	if w.closed {
 		return 0, fmt.Errorf("lsstream writer: write after close")
 	}
+	if w.stickyErr != nil {
+		return 0, w.stickyErr
+	}
 	w.onceHeader.Do(w.writeHeader)
 	if w.headerErr != nil {
+		w.stickyErr = w.headerErr
 		return 0, w.headerErr
 	}
 	for n != len(p) {
 		if w.inIdx == 0 && len(p)-n >= chunkSize {
 			if err = w.writeNextChunkFrom(p[n:n+chunkSize], false); err != nil {
+				w.stickyErr = err
 				return
 			}
 			n += chunkSize
@@ -76,6 +84,7 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 		n += count
 		if w.inIdx == len(w.in) {
 			if err = w.writeNextChunk(false); err != nil {
+				w.stickyErr = err
 				return
 			}
 		}
@@ -116,11 +125,18 @@ func (w *Writer) Close() error {
 		return w.closeErr
 	}
 	w.closed = true
-	w.onceHeader.Do(w.writeHeader)
-	if w.headerErr != nil {
-		w.closeErr = w.headerErr
+	if w.stickyErr != nil {
+		w.closeErr = w.stickyErr
 	} else {
-		w.closeErr = w.writeNextChunk(true)
+		w.onceHeader.Do(w.writeHeader)
+		if w.headerErr != nil {
+			w.closeErr = w.headerErr
+		} else {
+			w.closeErr = w.writeNextChunk(true)
+			if w.closeErr != nil {
+				w.stickyErr = w.closeErr
+			}
+		}
 	}
 	if w.state != nil {
 		w.state.wipe()

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 package monocypher55
 
 import (
@@ -28,13 +30,25 @@ func fe51_frombytes(out *fe51, in []byte) {
 func fe51_tobytes(out []byte, in *fe51) {
 	t := *in
 	// Report de retenue 51 bits
-	c := t[0] >> 51; t[0] &= mask51; t[1] += c
-	c = t[1] >> 51; t[1] &= mask51; t[2] += c
-	c = t[2] >> 51; t[2] &= mask51; t[3] += c
-	c = t[3] >> 51; t[3] &= mask51; t[4] += c
-	c = t[4] >> 51; t[4] &= mask51; t[0] += c * 19
+	c := t[0] >> 51
+	t[0] &= mask51
+	t[1] += c
+	c = t[1] >> 51
+	t[1] &= mask51
+	t[2] += c
+	c = t[2] >> 51
+	t[2] &= mask51
+	t[3] += c
+	c = t[3] >> 51
+	t[3] &= mask51
+	t[4] += c
+	c = t[4] >> 51
+	t[4] &= mask51
+	t[0] += c * 19
 
-	c = t[0] >> 51; t[0] &= mask51; t[1] += c
+	c = t[0] >> 51
+	t[0] &= mask51
+	t[1] += c
 
 	// Soustraction conditionnelle de p = 2^255 - 19
 	m0, c0 := bits.Sub64(t[0], mask51-18, 0)
@@ -115,19 +129,23 @@ func fe51_mul121666(out, in *fe51) {
 	out0 := lo0 & mask51
 
 	var c uint64
-	lo1, c = bits.Add64(lo1, c_0, 0); hi1, _ = bits.Add64(hi1, 0, c)
+	lo1, c = bits.Add64(lo1, c_0, 0)
+	hi1, _ = bits.Add64(hi1, 0, c)
 	c_1 := (hi1 << 13) | (lo1 >> 51)
 	out1 := lo1 & mask51
 
-	lo2, c = bits.Add64(lo2, c_1, 0); hi2, _ = bits.Add64(hi2, 0, c)
+	lo2, c = bits.Add64(lo2, c_1, 0)
+	hi2, _ = bits.Add64(hi2, 0, c)
 	c_2 := (hi2 << 13) | (lo2 >> 51)
 	out2 := lo2 & mask51
 
-	lo3, c = bits.Add64(lo3, c_2, 0); hi3, _ = bits.Add64(hi3, 0, c)
+	lo3, c = bits.Add64(lo3, c_2, 0)
+	hi3, _ = bits.Add64(hi3, 0, c)
 	c_3 := (hi3 << 13) | (lo3 >> 51)
 	out3 := lo3 & mask51
 
-	lo4, c = bits.Add64(lo4, c_3, 0); hi4, _ = bits.Add64(hi4, 0, c)
+	lo4, c = bits.Add64(lo4, c_3, 0)
+	hi4, _ = bits.Add64(hi4, 0, c)
 	c_4 := (hi4 << 13) | (lo4 >> 51)
 	out4 := lo4 & mask51
 
@@ -161,10 +179,14 @@ func fe51_mul(out, a, b *fe51) {
 
 	var c, c0, c1 uint64
 	var lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3, lo4, hi4 uint64
-	lo0, c = bits.Add64(lo0_0, lo0_1, 0); hi0, _ = bits.Add64(hi0_0, hi0_1, c)
-	lo0, c = bits.Add64(lo0, lo0_2, 0);   hi0, _ = bits.Add64(hi0, hi0_2, c)
-	lo0, c = bits.Add64(lo0, lo0_3, 0);   hi0, _ = bits.Add64(hi0, hi0_3, c)
-	lo0, c = bits.Add64(lo0, lo0_4, 0);   hi0, _ = bits.Add64(hi0, hi0_4, c)
+	lo0, c = bits.Add64(lo0_0, lo0_1, 0)
+	hi0, _ = bits.Add64(hi0_0, hi0_1, c)
+	lo0, c = bits.Add64(lo0, lo0_2, 0)
+	hi0, _ = bits.Add64(hi0, hi0_2, c)
+	lo0, c = bits.Add64(lo0, lo0_3, 0)
+	hi0, _ = bits.Add64(hi0, hi0_3, c)
+	lo0, c = bits.Add64(lo0, lo0_4, 0)
+	hi0, _ = bits.Add64(hi0, hi0_4, c)
 
 	// r1
 	hi1_0, lo1_0 := bits.Mul64(a0, b1)
@@ -173,10 +195,14 @@ func fe51_mul(out, a, b *fe51) {
 	hi1_3, lo1_3 := bits.Mul64(a3_19, b3)
 	hi1_4, lo1_4 := bits.Mul64(a2_19, b4)
 
-	lo1, c = bits.Add64(lo1_0, lo1_1, 0); hi1, _ = bits.Add64(hi1_0, hi1_1, c)
-	lo1, c = bits.Add64(lo1, lo1_2, 0);   hi1, _ = bits.Add64(hi1, hi1_2, c)
-	lo1, c = bits.Add64(lo1, lo1_3, 0);   hi1, _ = bits.Add64(hi1, hi1_3, c)
-	lo1, c = bits.Add64(lo1, lo1_4, 0);   hi1, _ = bits.Add64(hi1, hi1_4, c)
+	lo1, c = bits.Add64(lo1_0, lo1_1, 0)
+	hi1, _ = bits.Add64(hi1_0, hi1_1, c)
+	lo1, c = bits.Add64(lo1, lo1_2, 0)
+	hi1, _ = bits.Add64(hi1, hi1_2, c)
+	lo1, c = bits.Add64(lo1, lo1_3, 0)
+	hi1, _ = bits.Add64(hi1, hi1_3, c)
+	lo1, c = bits.Add64(lo1, lo1_4, 0)
+	hi1, _ = bits.Add64(hi1, hi1_4, c)
 
 	// r2
 	hi2_0, lo2_0 := bits.Mul64(a0, b2)
@@ -185,10 +211,14 @@ func fe51_mul(out, a, b *fe51) {
 	hi2_3, lo2_3 := bits.Mul64(a4_19, b3)
 	hi2_4, lo2_4 := bits.Mul64(a3_19, b4)
 
-	lo2, c = bits.Add64(lo2_0, lo2_1, 0); hi2, _ = bits.Add64(hi2_0, hi2_1, c)
-	lo2, c = bits.Add64(lo2, lo2_2, 0);   hi2, _ = bits.Add64(hi2, hi2_2, c)
-	lo2, c = bits.Add64(lo2, lo2_3, 0);   hi2, _ = bits.Add64(hi2, hi2_3, c)
-	lo2, c = bits.Add64(lo2, lo2_4, 0);   hi2, _ = bits.Add64(hi2, hi2_4, c)
+	lo2, c = bits.Add64(lo2_0, lo2_1, 0)
+	hi2, _ = bits.Add64(hi2_0, hi2_1, c)
+	lo2, c = bits.Add64(lo2, lo2_2, 0)
+	hi2, _ = bits.Add64(hi2, hi2_2, c)
+	lo2, c = bits.Add64(lo2, lo2_3, 0)
+	hi2, _ = bits.Add64(hi2, hi2_3, c)
+	lo2, c = bits.Add64(lo2, lo2_4, 0)
+	hi2, _ = bits.Add64(hi2, hi2_4, c)
 
 	// r3
 	hi3_0, lo3_0 := bits.Mul64(a0, b3)
@@ -197,10 +227,14 @@ func fe51_mul(out, a, b *fe51) {
 	hi3_3, lo3_3 := bits.Mul64(a3, b0)
 	hi3_4, lo3_4 := bits.Mul64(a4_19, b4)
 
-	lo3, c = bits.Add64(lo3_0, lo3_1, 0); hi3, _ = bits.Add64(hi3_0, hi3_1, c)
-	lo3, c = bits.Add64(lo3, lo3_2, 0);   hi3, _ = bits.Add64(hi3, hi3_2, c)
-	lo3, c = bits.Add64(lo3, lo3_3, 0);   hi3, _ = bits.Add64(hi3, hi3_3, c)
-	lo3, c = bits.Add64(lo3, lo3_4, 0);   hi3, _ = bits.Add64(hi3, hi3_4, c)
+	lo3, c = bits.Add64(lo3_0, lo3_1, 0)
+	hi3, _ = bits.Add64(hi3_0, hi3_1, c)
+	lo3, c = bits.Add64(lo3, lo3_2, 0)
+	hi3, _ = bits.Add64(hi3, hi3_2, c)
+	lo3, c = bits.Add64(lo3, lo3_3, 0)
+	hi3, _ = bits.Add64(hi3, hi3_3, c)
+	lo3, c = bits.Add64(lo3, lo3_4, 0)
+	hi3, _ = bits.Add64(hi3, hi3_4, c)
 
 	// r4
 	hi4_0, lo4_0 := bits.Mul64(a0, b4)
@@ -209,28 +243,36 @@ func fe51_mul(out, a, b *fe51) {
 	hi4_3, lo4_3 := bits.Mul64(a3, b1)
 	hi4_4, lo4_4 := bits.Mul64(a4, b0)
 
-	lo4, c = bits.Add64(lo4_0, lo4_1, 0); hi4, _ = bits.Add64(hi4_0, hi4_1, c)
-	lo4, c = bits.Add64(lo4, lo4_2, 0);   hi4, _ = bits.Add64(hi4, hi4_2, c)
-	lo4, c = bits.Add64(lo4, lo4_3, 0);   hi4, _ = bits.Add64(hi4, hi4_3, c)
-	lo4, c = bits.Add64(lo4, lo4_4, 0);   hi4, _ = bits.Add64(hi4, hi4_4, c)
+	lo4, c = bits.Add64(lo4_0, lo4_1, 0)
+	hi4, _ = bits.Add64(hi4_0, hi4_1, c)
+	lo4, c = bits.Add64(lo4, lo4_2, 0)
+	hi4, _ = bits.Add64(hi4, hi4_2, c)
+	lo4, c = bits.Add64(lo4, lo4_3, 0)
+	hi4, _ = bits.Add64(hi4, hi4_3, c)
+	lo4, c = bits.Add64(lo4, lo4_4, 0)
+	hi4, _ = bits.Add64(hi4, hi4_4, c)
 
 	// Propager les reports 51-bit
 	c_0 := (hi0 << 13) | (lo0 >> 51)
 	out0 := lo0 & mask51
 
-	lo1, c0 = bits.Add64(lo1, c_0, 0); hi1, _ = bits.Add64(hi1, 0, c0)
+	lo1, c0 = bits.Add64(lo1, c_0, 0)
+	hi1, _ = bits.Add64(hi1, 0, c0)
 	c_1 := (hi1 << 13) | (lo1 >> 51)
 	out1 := lo1 & mask51
 
-	lo2, c0 = bits.Add64(lo2, c_1, 0); hi2, _ = bits.Add64(hi2, 0, c0)
+	lo2, c0 = bits.Add64(lo2, c_1, 0)
+	hi2, _ = bits.Add64(hi2, 0, c0)
 	c_2 := (hi2 << 13) | (lo2 >> 51)
 	out2 := lo2 & mask51
 
-	lo3, c0 = bits.Add64(lo3, c_2, 0); hi3, _ = bits.Add64(hi3, 0, c0)
+	lo3, c0 = bits.Add64(lo3, c_2, 0)
+	hi3, _ = bits.Add64(hi3, 0, c0)
 	c_3 := (hi3 << 13) | (lo3 >> 51)
 	out3 := lo3 & mask51
 
-	lo4, c0 = bits.Add64(lo4, c_3, 0); hi4, _ = bits.Add64(hi4, 0, c0)
+	lo4, c0 = bits.Add64(lo4, c_3, 0)
+	hi4, _ = bits.Add64(hi4, 0, c0)
 	c_4 := (hi4 << 13) | (lo4 >> 51)
 	out4 := lo4 & mask51
 
@@ -283,38 +325,52 @@ func fe51_sq(out, in *fe51) {
 	var c, c0, c1 uint64
 	var lo0, hi0, lo1, hi1, lo2, hi2, lo3, hi3, lo4, hi4 uint64
 
-	lo0, c = bits.Add64(lo0_0, lo0_1, 0); hi0, _ = bits.Add64(hi0_0, hi0_1, c)
-	lo0, c = bits.Add64(lo0, lo0_2, 0);   hi0, _ = bits.Add64(hi0, hi0_2, c)
+	lo0, c = bits.Add64(lo0_0, lo0_1, 0)
+	hi0, _ = bits.Add64(hi0_0, hi0_1, c)
+	lo0, c = bits.Add64(lo0, lo0_2, 0)
+	hi0, _ = bits.Add64(hi0, hi0_2, c)
 
-	lo1, c = bits.Add64(lo1_0, lo1_1, 0); hi1, _ = bits.Add64(hi1_0, hi1_1, c)
-	lo1, c = bits.Add64(lo1, lo1_2, 0);   hi1, _ = bits.Add64(hi1, hi1_2, c)
+	lo1, c = bits.Add64(lo1_0, lo1_1, 0)
+	hi1, _ = bits.Add64(hi1_0, hi1_1, c)
+	lo1, c = bits.Add64(lo1, lo1_2, 0)
+	hi1, _ = bits.Add64(hi1, hi1_2, c)
 
-	lo2, c = bits.Add64(lo2_0, lo2_1, 0); hi2, _ = bits.Add64(hi2_0, hi2_1, c)
-	lo2, c = bits.Add64(lo2, lo2_2, 0);   hi2, _ = bits.Add64(hi2, hi2_2, c)
+	lo2, c = bits.Add64(lo2_0, lo2_1, 0)
+	hi2, _ = bits.Add64(hi2_0, hi2_1, c)
+	lo2, c = bits.Add64(lo2, lo2_2, 0)
+	hi2, _ = bits.Add64(hi2, hi2_2, c)
 
-	lo3, c = bits.Add64(lo3_0, lo3_1, 0); hi3, _ = bits.Add64(hi3_0, hi3_1, c)
-	lo3, c = bits.Add64(lo3, lo3_2, 0);   hi3, _ = bits.Add64(hi3, hi3_2, c)
+	lo3, c = bits.Add64(lo3_0, lo3_1, 0)
+	hi3, _ = bits.Add64(hi3_0, hi3_1, c)
+	lo3, c = bits.Add64(lo3, lo3_2, 0)
+	hi3, _ = bits.Add64(hi3, hi3_2, c)
 
-	lo4, c = bits.Add64(lo4_0, lo4_1, 0); hi4, _ = bits.Add64(hi4_0, hi4_1, c)
-	lo4, c = bits.Add64(lo4, lo4_2, 0);   hi4, _ = bits.Add64(hi4, hi4_2, c)
+	lo4, c = bits.Add64(lo4_0, lo4_1, 0)
+	hi4, _ = bits.Add64(hi4_0, hi4_1, c)
+	lo4, c = bits.Add64(lo4, lo4_2, 0)
+	hi4, _ = bits.Add64(hi4, hi4_2, c)
 
 	// Propager les reports 51-bit
 	c_0 := (hi0 << 13) | (lo0 >> 51)
 	out0 := lo0 & mask51
 
-	lo1, c0 = bits.Add64(lo1, c_0, 0); hi1, _ = bits.Add64(hi1, 0, c0)
+	lo1, c0 = bits.Add64(lo1, c_0, 0)
+	hi1, _ = bits.Add64(hi1, 0, c0)
 	c_1 := (hi1 << 13) | (lo1 >> 51)
 	out1 := lo1 & mask51
 
-	lo2, c0 = bits.Add64(lo2, c_1, 0); hi2, _ = bits.Add64(hi2, 0, c0)
+	lo2, c0 = bits.Add64(lo2, c_1, 0)
+	hi2, _ = bits.Add64(hi2, 0, c0)
 	c_2 := (hi2 << 13) | (lo2 >> 51)
 	out2 := lo2 & mask51
 
-	lo3, c0 = bits.Add64(lo3, c_2, 0); hi3, _ = bits.Add64(hi3, 0, c0)
+	lo3, c0 = bits.Add64(lo3, c_2, 0)
+	hi3, _ = bits.Add64(hi3, 0, c0)
 	c_3 := (hi3 << 13) | (lo3 >> 51)
 	out3 := lo3 & mask51
 
-	lo4, c0 = bits.Add64(lo4, c_3, 0); hi4, _ = bits.Add64(hi4, 0, c0)
+	lo4, c0 = bits.Add64(lo4, c_3, 0)
+	hi4, _ = bits.Add64(hi4, 0, c0)
 	c_4 := (hi4 << 13) | (lo4 >> 51)
 	out4 := lo4 & mask51
 
@@ -459,44 +515,44 @@ func Scalarmult_ref10(q []byte, scalar []byte, p []byte, nb_bits int) {
 	v14 := &_arr_v14
 	var _arr_v15 [10]int32
 	v15 := &_arr_v15
-	Fe_frombytes(v4, p)
-	Fe_1(v5)
-	Fe_0(v6)
-	Fe_copy(v7, v4)
-	Fe_1(v8)
+	fe_frombytes(v4, p)
+	fe_1(v5)
+	fe_0(v6)
+	fe_copy(v7, v4)
+	fe_1(v8)
 	v16 = 0
 	v18 = nb_bits - 1
 	for v18 >= 0 {
-		v19 := Scalar_bit(scalar, v18)
+		v19 := scalar_bit(scalar, v18)
 		v16 ^= v19
-		Fe_cswap(v5, v7, v16)
-		Fe_cswap(v6, v8, v16)
+		fe_cswap(v5, v7, v16)
+		fe_cswap(v6, v8, v16)
 		v16 = v19
-		Fe_add(v9, v5, v6)
-		Fe_sub(v6, v5, v6)
-		Fe_add(v10, v7, v8)
-		Fe_sub(v7, v7, v8)
-		Fe_sq(v11, v9)
-		Fe_sq(v12, v6)
-		Fe_mul(v13, v7, v9)
-		Fe_mul(v14, v10, v6)
-		Fe_sub(v15, v11, v12)
-		Fe_mul_small(v8, v15, 121666)
-		Fe_add(v8, v8, v12)
-		Fe_mul(v6, v8, v15)
-		Fe_mul(v5, v11, v12)
-		Fe_add(v8, v13, v14)
-		Fe_sq(v7, v8)
-		Fe_sub(v8, v13, v14)
-		Fe_sq(v8, v8)
-		Fe_mul(v8, v4, v8)
+		fe_add(v9, v5, v6)
+		fe_sub(v6, v5, v6)
+		fe_add(v10, v7, v8)
+		fe_sub(v7, v7, v8)
+		fe_sq(v11, v9)
+		fe_sq(v12, v6)
+		fe_mul(v13, v7, v9)
+		fe_mul(v14, v10, v6)
+		fe_sub(v15, v11, v12)
+		fe_mul_small(v8, v15, 121666)
+		fe_add(v8, v8, v12)
+		fe_mul(v6, v8, v15)
+		fe_mul(v5, v11, v12)
+		fe_add(v8, v13, v14)
+		fe_sq(v7, v8)
+		fe_sub(v8, v13, v14)
+		fe_sq(v8, v8)
+		fe_mul(v8, v4, v8)
 		v18--
 	}
-	Fe_cswap(v5, v7, v16)
-	Fe_cswap(v6, v8, v16)
-	Fe_invert(v6, v6)
-	Fe_mul(v5, v5, v6)
-	Fe_tobytes(q, v5)
+	fe_cswap(v5, v7, v16)
+	fe_cswap(v6, v8, v16)
+	fe_invert(v6, v6)
+	fe_mul(v5, v5, v6)
+	fe_tobytes(q, v5)
 	clear(v4[:])
 	clear(v5[:])
 	clear(v6[:])
@@ -510,4 +566,3 @@ func Scalarmult_ref10(q []byte, scalar []byte, p []byte, nb_bits int) {
 	clear(v14[:])
 	clear(v15[:])
 }
-

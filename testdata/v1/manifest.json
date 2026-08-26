@@ -1,0 +1,34 @@
+{
+  "key_hex": "515c4b7665101f0a3924d3decdf8e792818cbba655404f7a6914030e3d28d7c2",
+  "cases": [
+    {
+      "name": "empty",
+      "wire": "empty.wire",
+      "plain": "empty.plain",
+      "ad": "",
+      "note": "0 fragment ; en-tête nonce v1 seul ; pas de Close"
+    },
+    {
+      "name": "ad1000",
+      "wire": "ad1000.wire",
+      "plain": "ad1000.plain",
+      "ad": "ad-1",
+      "fragments": [
+        1000
+      ],
+      "note": "un fragment de 1000 octets lié à AD ad-1"
+    },
+    {
+      "name": "three",
+      "wire": "three.wire",
+      "plain": "three.plain",
+      "ad": "",
+      "fragments": [
+        100,
+        65537,
+        50
+      ],
+      "note": "trois Write sans AD ; le second dépasse ChunkSize et se coupe en deux trames"
+    }
+  ]
+}
