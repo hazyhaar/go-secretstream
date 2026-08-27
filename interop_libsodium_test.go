@@ -26,11 +26,19 @@ func packageDir(t *testing.T) string {
 	return filepath.Dir(file)
 }
 
+func requireOracle(t *testing.T, reason string) {
+	t.Helper()
+	if os.Getenv("CI") != "" || os.Getenv("REQUIRE_LIBSODIUM_ORACLE") == "1" {
+		t.Fatalf("libsodium_interop_required_in_ci: %s", reason)
+	}
+	t.Skip("libsodium_interop_unavailable: " + reason)
+}
+
 func driverPath(t *testing.T) string {
 	t.Helper()
 	p := filepath.Join(packageDir(t), "testdata", "libsodium_interop", "bin", "driver_secretstream")
 	if _, err := os.Stat(p); err != nil {
-		t.Skip("libsodium_interop_unavailable: driver missing — run make interop-driver")
+		requireOracle(t, "driver missing — run make interop-driver")
 	}
 	return p
 }
@@ -51,7 +59,8 @@ func loadManifest(t *testing.T) []goldenEntry {
 	p := filepath.Join(goldenDir(t), "manifest.json")
 	b, err := os.ReadFile(p)
 	if err != nil {
-		t.Skip("libsodium_interop_unavailable: no goldens — run make interop-goldens")
+		requireOracle(t, "no goldens — run make interop-goldens")
+		return nil
 	}
 	var m []goldenEntry
 	if err := json.Unmarshal(b, &m); err != nil {
